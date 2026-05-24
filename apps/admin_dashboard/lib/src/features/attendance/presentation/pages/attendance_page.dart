@@ -1856,3 +1856,22 @@ class _IntegrityCheck extends StatelessWidget {
     );
   }
 }
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+String? _cleanEmployeeCode(Object? value) {
+  final text = value?.toString().trim() ?? '';
+  if (text.isEmpty) return null;
+  final uuidPattern = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+  if (uuidPattern.hasMatch(text)) return null;
+  return text;
+}
+
+String _employeeIdLabel(String employeeId) {
+  if (employeeId.isEmpty) return 'Employee ID pending';
+  return employeeId;
+}
