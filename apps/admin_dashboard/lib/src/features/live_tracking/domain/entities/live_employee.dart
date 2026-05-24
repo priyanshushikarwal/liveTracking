@@ -21,6 +21,7 @@ class LiveEmployee {
     required this.lastActiveAt,
     required this.trackingStatus,
     required this.isOnline,
+    required this.connectionStatus,
   });
 
   final String id;
@@ -44,6 +45,7 @@ class LiveEmployee {
   final DateTime lastActiveAt;
   final String trackingStatus;
   final bool isOnline;
+  final String connectionStatus;
 
   LiveEmployee copyWith({
     String? id,
@@ -67,6 +69,7 @@ class LiveEmployee {
     DateTime? lastActiveAt,
     String? trackingStatus,
     bool? isOnline,
+    String? connectionStatus,
   }) {
     return LiveEmployee(
       id: id ?? this.id,
@@ -90,6 +93,7 @@ class LiveEmployee {
       lastActiveAt: lastActiveAt ?? this.lastActiveAt,
       trackingStatus: trackingStatus ?? this.trackingStatus,
       isOnline: isOnline ?? this.isOnline,
+      connectionStatus: connectionStatus ?? this.connectionStatus,
     );
   }
 }

@@ -124,13 +124,10 @@ class LiveTrackingState {
         .where((employee) {
           final status = employee.trackingStatus.toLowerCase();
           return switch (statusFilter) {
-            'online' => employee.isOnline,
-            'offline' => !employee.isOnline,
+            'online' => employee.connectionStatus == 'ONLINE',
+            'offline' => employee.connectionStatus == 'OFFLINE',
             'moving' => status.contains('moving') || status.contains('travel'),
-            'idle' =>
-              status.contains('idle') ||
-                  status.contains('stationary') ||
-                  status.contains('no_location'),
+            'idle' => employee.connectionStatus == 'IDLE',
             'violations' => employee.accuracy > 100,
             _ => true,
           };
@@ -212,6 +209,18 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
   Timer? _playbackTimer;
   Timer? _heartbeatTimer;
   Map<String, Map<String, dynamic>> _profilesById = const {};
+  Map<String, Map<String, dynamic>> _employeesByKey = const {};
+
+  static const List<Color> _routePalette = [
+    Color(0xFF54F1A6),
+    Color(0xFFFFB74D),
+    Color(0xFF4FC3F7),
+    Color(0xFFBA68C8),
+    Color(0xFF64B5F6),
+    Color(0xFFFF8A80),
+    Color(0xFF4DB6AC),
+    Color(0xFFFFD54F),
+  ];
 
   Future<void> _initialize() async {
     await refresh();
@@ -243,15 +252,19 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
           final recordedAtUtc = employee.lastSyncAt.isUtc
               ? employee.lastSyncAt
               : employee.lastSyncAt.toUtc();
-          final secondsDiff = nowUtc.difference(recordedAtUtc).inSeconds;
-          final isOnline = secondsDiff <= 60;
+          final connectionStatus = _connectionStatus(recordedAtUtc, nowUtc);
+          final isOnline = connectionStatus != 'OFFLINE';
 
-          if (employee.isOnline != isOnline) {
+          if (employee.isOnline != isOnline ||
+              employee.connectionStatus != connectionStatus) {
             debugPrint(
-              '[TrackingDebug] ${employee.name} status changed: ${employee.isOnline} -> $isOnline (last update ${secondsDiff}s ago)',
+              '[TrackingDebug] ${employee.name} status changed: ${employee.connectionStatus} -> $connectionStatus',
             );
             hasChanges = true;
-            return employee.copyWith(isOnline: isOnline);
+            return employee.copyWith(
+              isOnline: isOnline,
+              connectionStatus: connectionStatus,
+            );
           }
           return employee;
         })
@@ -275,10 +288,23 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
               as List<dynamic>? ??
           const [];
 
+      final employeeRows =
+          await _supabase
+                  .from('employees')
+                  .select(
+                    'id, employee_code, full_name, department, designation, team_id, branch_id, status, photo_url',
+                  )
+                  .order('full_name', ascending: true)
+              as List<dynamic>? ??
+          const [];
+
       final profiles = profileRows
           .map((row) {
             return Map<String, dynamic>.from(row as Map);
           })
+          .toList(growable: false);
+        final employeeDirectory = employeeRows
+          .map((row) => Map<String, dynamic>.from(row as Map))
           .toList(growable: false);
       _profilesById = {
         for (final row in profiles)
@@ -289,7 +315,16 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
           ])
             if (key != null && key.isNotEmpty) key: row,
       };
+      _employeesByKey = {
+        for (final row in employeeDirectory)
+          for (final key in [
+            row['id']?.toString(),
+            row['employee_code']?.toString(),
+          ])
+            if (key != null && key.isNotEmpty) key: row,
+      };
       debugPrint('[TrackingDebug] profiles loaded=${profiles.length}');
+      debugPrint('[TrackingDebug] employees loaded=${employeeDirectory.length}');
 
       final locationRows =
           await _supabase
@@ -705,21 +740,12 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
     }
 
     state = state.copyWith(playbackPlaying: true);
+    _startPlaybackTimer();
+  }
+
+  void stopPlayback() {
     _playbackTimer?.cancel();
-    _playbackTimer = Timer.periodic(const Duration(milliseconds: 650), (_) {
-      if (!mounted) return;
-      final increment = math.max(1, state.playbackSpeed);
-      final nextIndex = state.playbackIndex + increment;
-      if (nextIndex >= state.playback.length) {
-        _playbackTimer?.cancel();
-        state = state.copyWith(
-          playbackIndex: state.playback.length - 1,
-          playbackPlaying: false,
-        );
-      } else {
-        state = state.copyWith(playbackIndex: nextIndex);
-      }
-    });
+    state = state.copyWith(playbackPlaying: false, playbackIndex: 0);
   }
 
   void seekPlayback(double value) {
@@ -730,6 +756,28 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
 
   void setPlaybackSpeed(int speed) {
     state = state.copyWith(playbackSpeed: speed);
+    if (state.playbackPlaying) {
+      _startPlaybackTimer();
+    }
+  }
+
+  void _startPlaybackTimer() {
+    _playbackTimer?.cancel();
+    final clampedSpeed = math.max(1, state.playbackSpeed);
+    final baseMs = (650 / clampedSpeed).clamp(120, 650).round();
+    _playbackTimer = Timer.periodic(Duration(milliseconds: baseMs), (_) {
+      if (!mounted) return;
+      final nextIndex = state.playbackIndex + 1;
+      if (nextIndex >= state.playback.length) {
+        _playbackTimer?.cancel();
+        state = state.copyWith(
+          playbackIndex: state.playback.length - 1,
+          playbackPlaying: false,
+        );
+      } else {
+        state = state.copyWith(playbackIndex: nextIndex);
+      }
+    });
   }
 
   List<PlaybackPoint> _mergeRoutePoints(Iterable<PlaybackPoint> points) {
@@ -789,15 +837,15 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
   }
 
   Color statusColor(LiveEmployee employee) {
-    final status = employee.trackingStatus.toLowerCase();
-    if (!employee.isOnline || status.contains('offline')) {
+    final status = employee.connectionStatus.toLowerCase();
+    if (status.contains('offline')) {
       return const Color(0xFFFF6B6B);
     }
-    if (status.contains('moving') || status.contains('travel')) {
-      return const Color(0xFF54F1A6);
-    }
-    if (status.contains('idle') || status.contains('break')) {
+    if (status.contains('idle')) {
       return const Color(0xFF5CE1E6);
+    }
+    if (status.contains('online')) {
+      return const Color(0xFF54F1A6);
     }
     return const Color(0xFF54F1A6);
   }
@@ -828,6 +876,10 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
     String employeeId,
   ) {
     final profile = _profilesById[employeeId] ?? const <String, dynamic>{};
+    final profileEmployeeCode = profile['employee_id']?.toString();
+    final employee = _employeesByKey[profileEmployeeCode] ??
+        _employeesByKey[employeeId] ??
+        const <String, dynamic>{};
     final hasLocation = location.isNotEmpty;
     return {
       ...location,
@@ -842,6 +894,14 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
       'role': profile['role'],
       'profile_status': profile['status'],
       'profile_meta': profile['meta'],
+      'employee_code': employee['employee_code'],
+      'employee_full_name': employee['full_name'],
+      'employee_department': employee['department'],
+      'employee_designation': employee['designation'],
+      'employee_team_id': employee['team_id'],
+      'employee_branch_id': employee['branch_id'],
+      'employee_status': employee['status'],
+      'employee_photo_url': employee['photo_url'],
     };
   }
 
@@ -852,6 +912,7 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
     final recordedAt =
         DateTime.tryParse(json['recorded_at'] as String? ?? '') ??
         DateTime.fromMillisecondsSinceEpoch(0);
+    final connectionStatus = _connectionStatus(recordedAt);
     final activity =
         json['activity'] as String? ??
         json['currentActivity'] as String? ??
@@ -864,28 +925,40 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
       employeeCode:
           _cleanEmployeeCode(json['profile_employee_id']) ??
           _cleanEmployeeCode(json['employee_code']) ??
+          _cleanEmployeeCode(json['employeeCode']) ??
           _cleanEmployeeCode(meta['employeeCode']) ??
           'Employee ID pending',
       name:
           json['full_name'] as String? ??
+          json['employee_full_name'] as String? ??
+          json['employee_name'] as String? ??
           json['fullName'] as String? ??
           meta['fullName'] as String? ??
           'Employee',
       department:
           json['department'] as String? ??
+          json['employee_department'] as String? ??
           json['department_id'] as String? ??
           meta['department'] as String? ??
           'Operations',
       designation:
           json['designation'] as String? ??
+          json['employee_designation'] as String? ??
           meta['designation'] as String? ??
           'Field Executive',
       teamName:
           json['teamName'] as String? ??
+          json['employee_team_id'] as String? ??
           json['team_id'] as String? ??
           'Field Team',
-      branchLabel: json['branchLabel'] as String? ?? 'Assigned territory',
-      status: json['profile_status'] as String? ?? activity,
+      branchLabel:
+          json['branchLabel'] as String? ??
+          json['employee_branch_id'] as String? ??
+          'Assigned territory',
+      status:
+          json['profile_status'] as String? ??
+          json['employee_status'] as String? ??
+          activity,
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
       bearing: (json['bearing'] as num?)?.toDouble() ?? 0,
@@ -904,25 +977,31 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
       lastSyncAt: recordedAt,
       lastActiveAt: recordedAt,
       trackingStatus: activity,
-      isOnline: _isOnline(recordedAt),
+      isOnline: connectionStatus != 'OFFLINE',
+      connectionStatus: connectionStatus,
     );
   }
 
-  bool _isOnline(DateTime recordedAt) {
+  String _connectionStatus(DateTime recordedAt, [DateTime? nowUtc]) {
     if (recordedAt.millisecondsSinceEpoch == 0) {
-      debugPrint(
-        '[TrackingDebug] _isOnline: millisecondsSinceEpoch == 0, returning false',
-      );
-      return false;
+      return 'OFFLINE';
     }
-    // Compare in UTC to avoid timezone issues
-    final nowUtc = DateTime.now().toUtc();
-    final recordedAtUtc = recordedAt.isUtc ? recordedAt : recordedAt.toUtc();
-    final diffSeconds = nowUtc.difference(recordedAtUtc).inSeconds;
-    debugPrint(
-      '[TrackingDebug] _isOnline: now=$nowUtc, recorded=$recordedAtUtc, diff=${diffSeconds}s, online=${diffSeconds <= 60}',
-    );
-    return diffSeconds <= 60;
+    final now = nowUtc ?? DateTime.now().toUtc();
+    final recorded = recordedAt.isUtc ? recordedAt : recordedAt.toUtc();
+    final diffMinutes = now.difference(recorded).inMinutes;
+    if (diffMinutes < 2) return 'ONLINE';
+    if (diffMinutes < 10) return 'IDLE';
+    return 'OFFLINE';
+  }
+
+  Color employeeColor(LiveEmployee employee) {
+    final candidate = _cleanEmployeeCode(employee.employeeCode);
+    final key =
+        (candidate == null || candidate.toLowerCase().contains('pending'))
+        ? employee.id
+        : candidate;
+    final hash = key.hashCode.abs();
+    return _routePalette[hash % _routePalette.length];
   }
 
   String? _cleanEmployeeCode(Object? value) {

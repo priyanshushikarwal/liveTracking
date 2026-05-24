@@ -70,7 +70,10 @@ class _LiveTrackingPageState extends ConsumerState<LiveTrackingPage> {
                           playback: state.playback,
                           playbackCursor: state.playbackCursor,
                           stopMarkers: notifier.stopMarkers(),
-                          statusColor: notifier.statusColor,
+                          employeeColor: notifier.employeeColor,
+                          selectedRouteColor: selected == null
+                              ? Theme.of(context).colorScheme.primary
+                              : notifier.employeeColor(selected),
                           onEmployeeTap: notifier.selectEmployee,
                         ),
                       ),
@@ -97,6 +100,7 @@ class _LiveTrackingPageState extends ConsumerState<LiveTrackingPage> {
                       notifier.loadPlayback(employee.id);
                     }
                   },
+                  employeeColor: notifier.employeeColor,
                 ),
                 if (state.error != null) ...[
                   const SizedBox(height: 14),
@@ -139,7 +143,10 @@ class _LiveTrackingPageState extends ConsumerState<LiveTrackingPage> {
                             playback: state.playback,
                             playbackCursor: state.playbackCursor,
                             stopMarkers: notifier.stopMarkers(),
-                            statusColor: notifier.statusColor,
+                            employeeColor: notifier.employeeColor,
+                            selectedRouteColor: selected == null
+                                ? Theme.of(context).colorScheme.primary
+                                : notifier.employeeColor(selected),
                             onEmployeeTap: notifier.selectEmployee,
                           ),
                         ),
@@ -188,11 +195,13 @@ class _TrackingSummary {
 
     for (final employee in employees) {
       final status = employee.trackingStatus.toLowerCase();
-      if (employee.isOnline) online++;
+      if (employee.connectionStatus == 'ONLINE') {
+        online++;
+      } else if (employee.connectionStatus == 'IDLE') {
+        idle++;
+      }
       if (status.contains('moving') || status.contains('travel')) {
         moving++;
-      } else if (employee.isOnline && status.contains('idle')) {
-        idle++;
       }
       if (employee.latitude != 0 || employee.longitude != 0) checkedIn++;
 
@@ -203,7 +212,7 @@ class _TrackingSummary {
     return _TrackingSummary(
       total: employees.length,
       online: online,
-      offline: employees.length - online,
+      offline: employees.length - online - idle,
       moving: moving,
       idle: idle,
       checkedIn: checkedIn,
@@ -493,9 +502,7 @@ class _EmployeeSelector extends StatelessWidget {
                       height: 8,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: employee.isOnline
-                            ? const Color(0xFF54F1A6)
-                            : Theme.of(context).colorScheme.error,
+                        color: notifier.statusColor(employee),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -534,12 +541,22 @@ class _EmployeeTrackingPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final emp = employee;
+    final employeeColor = emp == null
+      ? theme.colorScheme.primary
+      : notifier.employeeColor(emp);
     final routeStart = state.playback.isEmpty
         ? '--'
         : _timeLabel(state.playback.first.recordedAt);
     final routeEnd = state.playback.isEmpty
         ? '--'
         : _timeLabel(state.playback.last.recordedAt);
+    final playbackCursor = state.playbackCursor;
+    final playbackNow = playbackCursor == null
+      ? '--'
+      : _timeLabel(playbackCursor.recordedAt);
+    final playbackProgress = state.playback.isEmpty
+      ? '--'
+      : '${state.playbackIndex + 1}/${state.playback.length}';
     return Container(
       decoration: _panelDecoration(context),
       child: emp == null
@@ -573,13 +590,11 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                     children: [
                       CircleAvatar(
                         radius: 20,
-                        backgroundColor: theme.colorScheme.primary.withValues(
-                          alpha: 0.2,
-                        ),
+                        backgroundColor: employeeColor.withValues(alpha: 0.2),
                         child: Text(
                           emp.name.isNotEmpty ? emp.name[0].toUpperCase() : '?',
                           style: TextStyle(
-                            color: theme.colorScheme.primary,
+                            color: employeeColor,
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                           ),
@@ -615,13 +630,19 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                     children: [
                       _DetailRow(
                         'Status',
-                        emp.isOnline ? 'Online' : 'Offline',
+                        emp.connectionStatus,
                         isStatus: true,
-                        online: emp.isOnline,
+                        online: emp.connectionStatus != 'OFFLINE',
                       ),
                       _DetailRow(
                         'Location',
                         '${emp.latitude.toStringAsFixed(5)}, ${emp.longitude.toStringAsFixed(5)}',
+                      ),
+                      _DetailRow(
+                        'Last Location Update',
+                        emp.lastSyncAt.millisecondsSinceEpoch == 0
+                            ? '--'
+                            : _timeLabel(emp.lastSyncAt),
                       ),
                       _DetailRow(
                         'Speed',
@@ -633,8 +654,9 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                       ),
                       _DetailRow('Battery', '${emp.battery}%'),
                       _DetailRow('Network', emp.internetStatus),
-                      _DetailRow('GPS Accuracy', '${emp.accuracy.toInt()}m'),
-                      _DetailRow('Last Update', _timeAgo(emp.lastSyncAt)),
+                      _DetailRow('GPS Status', emp.gpsStatus),
+                      _DetailRow('Tracking Status', emp.trackingStatus),
+                      _DetailRow('Last Seen', _timeAgo(emp.lastSyncAt)),
                       const SizedBox(height: 16),
                       Text(
                         'TRACKING HEALTH',
@@ -648,13 +670,23 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                       ),
                       _HealthIndicator(
                         label: 'Connection',
-                        status: emp.isOnline ? 'Active' : 'Lost',
-                        isGood: emp.isOnline,
+                        status: emp.connectionStatus,
+                        isGood: emp.connectionStatus != 'OFFLINE',
                       ),
                       _HealthIndicator(
                         label: 'Battery Level',
                         status: emp.battery > 20 ? 'Good' : 'Low',
                         isGood: emp.battery > 20,
+                      ),
+                      _HealthIndicator(
+                        label: 'Network',
+                        status: emp.internetStatus,
+                        isGood: emp.internetStatus.toLowerCase() != 'offline',
+                      ),
+                      _HealthIndicator(
+                        label: 'Tracking',
+                        status: emp.trackingStatus,
+                        isGood: emp.trackingStatus.toLowerCase() != 'offline',
                       ),
                       const SizedBox(height: 24),
                       Text('DAILY ROUTE', style: theme.textTheme.labelLarge),
@@ -694,6 +726,13 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                                   : Icons.play_arrow,
                             ),
                           ),
+                          IconButton(
+                            tooltip: 'Stop route playback',
+                            onPressed: state.playback.isEmpty
+                                ? null
+                                : notifier.stopPlayback,
+                            icon: const Icon(Icons.stop),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -721,6 +760,32 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                               ? null
                               : notifier.seekPlayback,
                         ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(playbackNow, style: theme.textTheme.bodySmall),
+                          Text(
+                            playbackProgress,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [1, 2, 5, 10]
+                            .map(
+                              (speed) => ChoiceChip(
+                                label: Text('${speed}x'),
+                                selected: state.playbackSpeed == speed,
+                                onSelected: (_) => notifier.setPlaybackSpeed(
+                                  speed,
+                                ),
+                              ),
+                            )
+                            .toList(growable: false),
                       ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -806,12 +871,14 @@ class _LiveEmployeeList extends StatelessWidget {
     required this.selectedId,
     required this.onSelect,
     required this.onViewDailyRoute,
+    required this.employeeColor,
   });
 
   final List<LiveEmployee> employees;
   final String? selectedId;
   final ValueChanged<String> onSelect;
   final VoidCallback onViewDailyRoute;
+  final Color Function(LiveEmployee employee) employeeColor;
 
   @override
   Widget build(BuildContext context) {
@@ -852,7 +919,7 @@ class _LiveEmployeeList extends StatelessWidget {
                   DataCell(
                     CircleAvatar(
                       radius: 16,
-                      backgroundColor: theme.colorScheme.primary.withValues(
+                      backgroundColor: employeeColor(employee).withValues(
                         alpha: 0.2,
                       ),
                       child: Text(
@@ -860,7 +927,7 @@ class _LiveEmployeeList extends StatelessWidget {
                             ? employee.name[0].toUpperCase()
                             : '?',
                         style: TextStyle(
-                          color: theme.colorScheme.primary,
+                          color: employeeColor(employee),
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -873,7 +940,12 @@ class _LiveEmployeeList extends StatelessWidget {
                       '${employee.latitude.toStringAsFixed(5)}, ${employee.longitude.toStringAsFixed(5)}',
                     ),
                   ),
-                  DataCell(_EmployeeStatusBadge(employee: employee)),
+                  DataCell(
+                    _EmployeeStatusBadge(
+                      employee: employee,
+                      color: employeeColor(employee),
+                    ),
+                  ),
                 ],
               );
             }).toList(),
@@ -954,53 +1026,38 @@ class _HealthIndicator extends StatelessWidget {
 }
 
 class _EmployeeStatusBadge extends StatelessWidget {
-  const _EmployeeStatusBadge({required this.employee});
+  const _EmployeeStatusBadge({required this.employee, required this.color});
 
   final LiveEmployee employee;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final status = employee.trackingStatus.toLowerCase();
-
-    // Determine status color and label
-    Color color;
-    String label;
-    IconData icon;
-
-    if (!employee.isOnline || status.contains('offline')) {
-      color = const Color(0xFFFF6B6B);
-      label = 'OFFLINE';
-      icon = Icons.circle;
-    } else if (status.contains('moving') || status.contains('travel')) {
-      color = const Color(0xFF54F1A6);
-      label = 'MOVING';
-      icon = Icons.directions_car;
-    } else if (status.contains('idle')) {
-      color = const Color(0xFF5CE1E6);
-      label = 'IDLE';
-      icon = Icons.pause;
-    } else {
-      color = const Color(0xFF54F1A6);
-      label = 'ONLINE';
-      icon = Icons.circle;
-    }
+    final status = employee.connectionStatus.toUpperCase();
+    final icon = status == 'OFFLINE'
+        ? Icons.circle
+        : status == 'IDLE'
+        ? Icons.pause
+        : Icons.circle;
+    final badgeColor =
+        status == 'OFFLINE' ? color.withValues(alpha: 0.45) : color;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
+        color: badgeColor.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 12),
+          Icon(icon, color: badgeColor, size: 12),
           const SizedBox(width: 6),
           Text(
-            label,
+            status,
             style: TextStyle(
-              color: color,
+              color: badgeColor,
               fontWeight: FontWeight.bold,
               fontSize: 11,
             ),

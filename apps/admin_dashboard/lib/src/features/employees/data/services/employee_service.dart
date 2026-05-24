@@ -29,6 +29,10 @@ class EmployeeService {
     required String fullName,
     required String email,
     String? phone,
+    String? department,
+    String? team,
+    String? branch,
+    String? shift,
     String role = 'EMPLOYEE',
     String? branchId,
     String? departmentId,
@@ -43,6 +47,10 @@ class EmployeeService {
       'branch_id': branchId,
       'department_id': departmentId,
       'team_id': teamId,
+      'department': department,
+      'team': team,
+      'branch': branch,
+      'shift': shift,
     };
 
     final resp = await supabase.functions.invoke(

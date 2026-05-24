@@ -1071,7 +1071,7 @@ String _employeeName(
       ? email!
       : code?.isNotEmpty == true
       ? code!
-      : _shortId(employeeId);
+      : 'Employee';
 }
 
 String _status(Map<String, dynamic> visit) {
@@ -1093,11 +1093,6 @@ String _label(String value) {
             : '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}',
       )
       .join(' ');
-}
-
-String _shortId(String? id) {
-  if (id == null || id.isEmpty) return '--';
-  return id.length <= 8 ? id : id.substring(0, 8);
 }
 
 List<Map<String, dynamic>> _photos(Map<String, dynamic> visit) {

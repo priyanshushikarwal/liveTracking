@@ -38,7 +38,19 @@ export default async function (req: Request) {
   }
 
   const body = await req.json();
-  const { full_name, email, phone, role = 'EMPLOYEE', branch_id, department_id, team_id } = body;
+  const {
+    full_name,
+    email,
+    phone,
+    role = 'EMPLOYEE',
+    branch_id,
+    department_id,
+    team_id,
+    department,
+    team,
+    branch,
+    shift,
+  } = body;
   if (!email || !full_name) {
     return new Response(JSON.stringify({ error: 'missing fields' }), { status: 400 });
   }
@@ -112,7 +124,13 @@ export default async function (req: Request) {
       branch_id: branch_id || null,
       department_id: department_id || null,
       team_id: team_id || null,
-      phone
+      phone,
+      meta: {
+        department: department || null,
+        team: team || null,
+        branch: branch || null,
+        shift: shift || null,
+      }
     })
   });
 

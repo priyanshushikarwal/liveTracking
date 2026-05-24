@@ -99,8 +99,9 @@ class BackgroundTrackingService {
     await _service.configure(
       androidConfiguration: AndroidConfiguration(
         onStart: _backgroundTrackingEntryPoint,
-        autoStart: false,
-        isForegroundMode: false,
+        autoStart: true,
+        autoStartOnBoot: true,
+        isForegroundMode: true,
         notificationChannelId: 'live_tracking_background',
         initialNotificationTitle: 'Live tracking ready',
         initialNotificationContent:
@@ -109,7 +110,7 @@ class BackgroundTrackingService {
         foregroundServiceTypes: [AndroidForegroundType.location],
       ),
       iosConfiguration: IosConfiguration(
-        autoStart: false,
+        autoStart: true,
         onForeground: _backgroundTrackingEntryPoint,
         onBackground: _onIosBackground,
       ),

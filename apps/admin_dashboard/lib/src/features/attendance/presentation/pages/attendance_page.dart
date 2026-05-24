@@ -64,11 +64,10 @@ class AttendanceRecord {
     );
     final checkInAt = _parseDate(json['check_in_at']) ?? DateTime.now();
     final employeeCode =
-        profile?['employee_id']?.toString() ??
-        metadata['employeeId']?.toString() ??
-        json['employee_code']?.toString() ??
-        json['employee_id']?.toString() ??
-        '';
+      _cleanEmployeeCode(profile?['employee_id']) ??
+      _cleanEmployeeCode(metadata['employeeId']) ??
+      _cleanEmployeeCode(json['employee_code']) ??
+      '';
     final employeeName =
         profile?['full_name']?.toString() ??
         metadata['employeeName']?.toString() ??
@@ -833,7 +832,7 @@ class _AttendanceTable extends StatelessWidget {
               cells: [
                 DataCell(_EmployeeAvatar(record: record)),
                 DataCell(Text(record.employeeName)),
-                DataCell(Text(record.employeeId)),
+                DataCell(Text(_employeeIdLabel(record.employeeId))),
                 DataCell(Text(record.department)),
                 DataCell(
                   Text(DateFormat('dd MMM yyyy').format(record.attendanceDate)),
@@ -1060,7 +1059,7 @@ class _AttendanceDetailDialog extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            _DetailRow('Employee ID', record.employeeId),
+            _DetailRow('Employee ID', _employeeIdLabel(record.employeeId)),
             _DetailRow('Department', record.department),
             _DetailRow('Location', record.location),
             _DetailRow(

@@ -16,7 +16,8 @@ class LiveTrackingMap extends StatefulWidget {
     required this.playback,
     required this.playbackCursor,
     required this.stopMarkers,
-    required this.statusColor,
+    required this.employeeColor,
+    required this.selectedRouteColor,
     required this.onEmployeeTap,
     super.key,
   });
@@ -28,7 +29,8 @@ class LiveTrackingMap extends StatefulWidget {
   final List<PlaybackPoint> playback;
   final PlaybackPoint? playbackCursor;
   final List<PlaybackPoint> stopMarkers;
-  final Color Function(LiveEmployee employee) statusColor;
+  final Color Function(LiveEmployee employee) employeeColor;
+  final Color selectedRouteColor;
   final ValueChanged<String> onEmployeeTap;
 
   @override
@@ -99,6 +101,7 @@ class _LiveTrackingMapState extends State<LiveTrackingMap>
     final routePoints = selectedTrail
         .map((item) => item.latLng)
         .toList(growable: false);
+    final routeColor = widget.selectedRouteColor;
     final focus =
         widget.playbackCursor?.latLng ??
         (widget.selectedEmployee == null ||
@@ -148,7 +151,7 @@ class _LiveTrackingMapState extends State<LiveTrackingMap>
                     Polyline(
                       points: routePoints,
                       strokeWidth: 4,
-                      color: const Color(0xFF94A3B8).withValues(alpha: 0.52),
+                      color: routeColor.withValues(alpha: 0.45),
                     ),
                   ],
                 ),
@@ -170,7 +173,7 @@ class _LiveTrackingMapState extends State<LiveTrackingMap>
                         Polyline(
                           points: visiblePoints,
                           strokeWidth: 5,
-                          color: const Color(0xFF5CE1E6),
+                          color: routeColor,
                         ),
                       ],
                     );
@@ -215,7 +218,7 @@ class _LiveTrackingMapState extends State<LiveTrackingMap>
                       point: widget.playbackCursor!.latLng,
                       width: 86,
                       height: 86,
-                      child: const _PlaybackMarker(),
+                      child: _PlaybackMarker(color: routeColor),
                     ),
                 ],
               ),
@@ -280,7 +283,7 @@ class _LiveTrackingMapState extends State<LiveTrackingMap>
                 child: _EmployeeMapMarker(
                   name: employee.name,
                   code: employee.employeeCode,
-                  color: widget.statusColor(employee),
+                  color: widget.employeeColor(employee),
                   selected: widget.selectedEmployee?.id == employee.id,
                   bearing: employee.bearing,
                   online: employee.isOnline,
@@ -528,7 +531,9 @@ class _VisitPopupLine extends StatelessWidget {
 }
 
 class _PlaybackMarker extends StatelessWidget {
-  const _PlaybackMarker();
+  const _PlaybackMarker({required this.color});
+
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -540,9 +545,7 @@ class _PlaybackMarker extends StatelessWidget {
           height: 54,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Theme.of(
-              context,
-            ).colorScheme.primary.withValues(alpha: 0.18),
+            color: color.withValues(alpha: 0.18),
           ),
         ),
         Container(
@@ -550,7 +553,7 @@ class _PlaybackMarker extends StatelessWidget {
           height: 24,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Theme.of(context).colorScheme.primary,
+            color: color,
             border: Border.all(color: Colors.white, width: 4),
           ),
         ),
