@@ -114,6 +114,7 @@ class TrackingViewModel extends StateNotifier<TrackingState> {
     await _loadInitialLocation();
     await _ref.read(trackingTransportServiceProvider).initialize();
     _bindTransport();
+    await startAutomaticTracking();
     _startLocationStream();
     _deviceTimer ??= Timer.periodic(
       const Duration(seconds: 20),
@@ -236,8 +237,31 @@ class TrackingViewModel extends StateNotifier<TrackingState> {
       clearError: true,
     );
 
-    if (state.trackingEnabled) {
-      unawaited(_publishLiveLocation(location));
+    unawaited(_publishLiveLocation(location));
+  }
+
+  Future<void> startAutomaticTracking() async {
+    try {
+      final service = _ref.read(backgroundTrackingServiceProvider);
+      if (!service.isEnabled) {
+        await service.start();
+      }
+      if (!mounted) return;
+      state = state.copyWith(
+        trackingEnabled: true,
+        trackingStatus: state.trackingStatus == 'IDLE'
+            ? 'ACTIVE'
+            : state.trackingStatus,
+        lastSyncSummary: 'Tracking Active',
+        clearError: true,
+      );
+      final location = state.lastLocation;
+      if (location != null) {
+        await _publishLiveLocation(location, force: true);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      state = state.copyWith(trackingEnabled: false, error: '$error');
     }
   }
 
@@ -376,9 +400,10 @@ class TrackingViewModel extends StateNotifier<TrackingState> {
 
     final elapsed = DateTime.now().difference(publishedAt);
     final moving = location.speed >= 1.2;
+    // Updated intervals: 10s when moving, 30s when idle
     final threshold = moving
-        ? const Duration(seconds: 8)
-        : const Duration(seconds: 45);
+        ? const Duration(seconds: 10)
+        : const Duration(seconds: 30);
     final distance = Geolocator.distanceBetween(
       publishedLocation.latitude,
       publishedLocation.longitude,

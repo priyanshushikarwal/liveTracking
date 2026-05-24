@@ -5,6 +5,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/storage/secure_storage_service.dart';
 import '../../../../core/supabase/supabase_client.dart' as sb;
 import '../../../../shared/models/employee_profile.dart';
+import '../../../../core/services/background_tracking_service.dart';
+import '../../../../core/services/device_status_service.dart';
+import '../../../../core/services/location_service.dart';
+import '../../../../core/services/tracking_transport_service.dart';
 import '../../domain/entities/user_session.dart';
 
 class AuthState {
@@ -47,7 +51,9 @@ class AuthState {
 }
 
 class AuthViewModel extends StateNotifier<AuthState> {
-  AuthViewModel(dynamic ref) : super(const AuthState());
+  AuthViewModel(Ref ref) : _ref = ref, super(const AuthState());
+
+  final Ref _ref;
 
   Future<void> loginWithEmployeeId(String employeeId, String password) async {
     state = state.copyWith(loading: true, clearError: true);
@@ -139,6 +145,7 @@ class AuthViewModel extends StateNotifier<AuthState> {
         deviceBindingId: employeeSession.deviceBindingId,
         session: employeeSession,
       );
+      await _startTrackingAfterLogin();
 
       state = state.copyWith(
         loading: false,
@@ -148,6 +155,34 @@ class AuthViewModel extends StateNotifier<AuthState> {
       );
     } catch (e) {
       state = state.copyWith(loading: false, error: e.toString());
+    }
+  }
+
+  Future<void> _startTrackingAfterLogin() async {
+    try {
+      await _ref.read(backgroundTrackingServiceProvider).start();
+      final location = await _ref
+          .read(locationServiceProvider)
+          .currentLocation();
+      final device = await _ref.read(deviceStatusServiceProvider).snapshot();
+      await _ref
+          .read(trackingTransportServiceProvider)
+          .publishLocation(
+            TrackingPayload(
+              latitude: location.latitude,
+              longitude: location.longitude,
+              accuracy: location.accuracy,
+              speed: location.speed < 0 ? 0 : location.speed,
+              heading: location.heading,
+              batteryPercent: device.batteryPercent,
+              internetStatus: device.internetStatus,
+              recordedAt: location.timestamp,
+              activity: location.speed >= 1.2 ? 'MOVING' : 'IDLE',
+              isMocked: location.isMocked,
+            ),
+          );
+    } catch (error) {
+      // Do not block login; tracking UI will surface permission/GPS issues.
     }
   }
 

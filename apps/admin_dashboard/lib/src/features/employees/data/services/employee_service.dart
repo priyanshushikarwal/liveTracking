@@ -7,6 +7,24 @@ import '../../../../core/supabase/supabase_client.dart' as sb;
 class EmployeeService {
   EmployeeService();
 
+  Future<List<Map<String, dynamic>>> listEmployees() async {
+    final SupabaseClient supabase = sb.supabase;
+    final rows =
+        await supabase
+                .from('profiles')
+                .select(
+                  'id, full_name, employee_id, department_id, role, status, meta',
+                )
+                .ilike('role', 'employee')
+                .order('full_name')
+            as List<dynamic>? ??
+        const [];
+
+    return rows
+        .map((row) => Map<String, dynamic>.from(row as Map))
+        .toList(growable: false);
+  }
+
   Future<Map<String, dynamic>> createEmployee({
     required String fullName,
     required String email,

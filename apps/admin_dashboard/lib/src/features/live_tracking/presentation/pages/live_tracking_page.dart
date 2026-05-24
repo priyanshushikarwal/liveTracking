@@ -161,42 +161,55 @@ class _TrackingSummary {
     required this.online,
     required this.offline,
     required this.moving,
-    required this.stationary,
+    required this.idle,
     required this.checkedIn,
     required this.checkedOut,
+    required this.avgBattery,
+    required this.lowBatteryCount,
   });
 
   final int total;
   final int online;
   final int offline;
   final int moving;
-  final int stationary;
+  final int idle;
   final int checkedIn;
   final int checkedOut;
+  final double avgBattery;
+  final int lowBatteryCount;
 
   factory _TrackingSummary.from(List<LiveEmployee> employees) {
     var online = 0;
     var moving = 0;
-    var stationary = 0;
+    var idle = 0;
     var checkedIn = 0;
+    var totalBattery = 0;
+    var lowBattery = 0;
+
     for (final employee in employees) {
       final status = employee.trackingStatus.toLowerCase();
       if (employee.isOnline) online++;
       if (status.contains('moving') || status.contains('travel')) {
         moving++;
-      } else if (employee.isOnline) {
-        stationary++;
+      } else if (employee.isOnline && status.contains('idle')) {
+        idle++;
       }
       if (employee.latitude != 0 || employee.longitude != 0) checkedIn++;
+
+      totalBattery += employee.battery;
+      if (employee.battery < 20) lowBattery++;
     }
+
     return _TrackingSummary(
       total: employees.length,
       online: online,
       offline: employees.length - online,
       moving: moving,
-      stationary: stationary,
+      idle: idle,
       checkedIn: checkedIn,
       checkedOut: employees.length - checkedIn,
+      avgBattery: employees.isEmpty ? 0 : totalBattery / employees.length,
+      lowBatteryCount: lowBattery,
     );
   }
 }
@@ -209,13 +222,51 @@ class _OverviewGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cards = [
-      _MetricCard(label: 'Total Employees', value: summary.total),
-      _MetricCard(label: 'Online', value: summary.online),
-      _MetricCard(label: 'Offline', value: summary.offline),
-      _MetricCard(label: 'Moving', value: summary.moving),
-      _MetricCard(label: 'Stationary', value: summary.stationary),
-      _MetricCard(label: 'Checked In', value: summary.checkedIn),
-      _MetricCard(label: 'Checked Out', value: summary.checkedOut),
+      _MetricCard(
+        label: 'Total Employees',
+        value: summary.total,
+        icon: Icons.people,
+        color: Colors.blue,
+      ),
+      _MetricCard(
+        label: 'Online',
+        value: summary.online,
+        icon: Icons.wifi,
+        color: const Color(0xFF54F1A6),
+        isStatus: true,
+      ),
+      _MetricCard(
+        label: 'Offline',
+        value: summary.offline,
+        icon: Icons.wifi_off,
+        color: const Color(0xFFFF6B6B),
+        isStatus: true,
+      ),
+      _MetricCard(
+        label: 'Moving',
+        value: summary.moving,
+        icon: Icons.directions_car,
+        color: const Color(0xFF54F1A6),
+      ),
+      _MetricCard(
+        label: 'Idle',
+        value: summary.idle,
+        icon: Icons.pause_circle,
+        color: const Color(0xFF5CE1E6),
+      ),
+      _MetricCard(
+        label: 'Active Visits',
+        value: summary.checkedIn,
+        icon: Icons.location_on,
+        color: const Color(0xFFF9C74F),
+      ),
+      _MetricCard(
+        label: 'Low Battery',
+        value: summary.lowBatteryCount,
+        icon: Icons.battery_alert,
+        color: summary.lowBatteryCount > 0 ? Colors.orange : Colors.grey,
+        alert: summary.lowBatteryCount > 0,
+      ),
     ];
 
     return LayoutBuilder(
@@ -233,7 +284,7 @@ class _OverviewGrid extends StatelessWidget {
             crossAxisCount: columns,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            childAspectRatio: 1.55,
+            childAspectRatio: 1.8,
           ),
           itemBuilder: (_, index) => cards[index],
         );
@@ -243,23 +294,78 @@ class _OverviewGrid extends StatelessWidget {
 }
 
 class _MetricCard extends StatelessWidget {
-  const _MetricCard({required this.label, required this.value});
+  const _MetricCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    this.isStatus = false,
+    this.alert = false,
+  });
 
   final String label;
   final int value;
+  final IconData icon;
+  final Color color;
+  final bool isStatus;
+  final bool alert;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-      decoration: _panelDecoration(context),
+      padding: const EdgeInsets.all(16),
+      decoration: _panelDecoration(context).copyWith(
+        border: Border.all(
+          color: alert
+              ? Colors.orange.withValues(alpha: 0.5)
+              : Theme.of(context).colorScheme.outline,
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label.toUpperCase(), style: theme.textTheme.labelLarge),
-          const SizedBox(height: 8),
-          Text('$value', style: theme.textTheme.headlineLarge),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              if (isStatus && value > 0)
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+            ],
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$value',
+                style: theme.textTheme.headlineLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label.toUpperCase(),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: Colors.white60,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -395,7 +501,7 @@ class _EmployeeSelector extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        '${employee.name.toUpperCase()} • ${employee.employeeCode}',
+                        '${employee.name} (${employee.employeeCode})',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -427,6 +533,7 @@ class _EmployeeTrackingPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final emp = employee;
     final routeStart = state.playback.isEmpty
         ? '--'
         : _timeLabel(state.playback.first.recordedAt);
@@ -435,7 +542,7 @@ class _EmployeeTrackingPanel extends StatelessWidget {
         : _timeLabel(state.playback.last.recordedAt);
     return Container(
       decoration: _panelDecoration(context),
-      child: employee == null
+      child: emp == null
           ? Center(
               child: Text(
                 'SELECT AN EMPLOYEE',
@@ -466,9 +573,16 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                     children: [
                       CircleAvatar(
                         radius: 20,
-                        backgroundColor: theme.colorScheme.surface,
-                        backgroundImage: NetworkImage(
-                          'https://i.pravatar.cc/150?u=${employee!.id}',
+                        backgroundColor: theme.colorScheme.primary.withValues(
+                          alpha: 0.2,
+                        ),
+                        child: Text(
+                          emp.name.isNotEmpty ? emp.name[0].toUpperCase() : '?',
+                          style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -477,13 +591,13 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              employee!.name.toUpperCase(),
+                              emp.name.toUpperCase(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.labelLarge,
                             ),
                             Text(
-                              '${employee!.employeeCode} • ${employee!.department}',
+                              '${emp.employeeCode} • ${emp.department}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodySmall,
@@ -501,24 +615,47 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                     children: [
                       _DetailRow(
                         'Status',
-                        employee!.isOnline ? 'Online' : 'Offline',
+                        emp.isOnline ? 'Online' : 'Offline',
                         isStatus: true,
-                        online: employee!.isOnline,
+                        online: emp.isOnline,
                       ),
                       _DetailRow(
                         'Location',
-                        '${employee!.latitude.toStringAsFixed(5)}, ${employee!.longitude.toStringAsFixed(5)}',
+                        '${emp.latitude.toStringAsFixed(5)}, ${emp.longitude.toStringAsFixed(5)}',
                       ),
                       _DetailRow(
                         'Speed',
-                        '${_speedKmh(employee!).toStringAsFixed(1)} km/h',
+                        '${_speedKmh(emp).toStringAsFixed(1)} km/h',
                       ),
                       _DetailRow(
                         'Today Distance',
                         '${_distanceKm(state.playback).toStringAsFixed(2)} km',
                       ),
-                      _DetailRow('Battery', '${employee!.battery}%'),
-                      _DetailRow('Network', employee!.internetStatus),
+                      _DetailRow('Battery', '${emp.battery}%'),
+                      _DetailRow('Network', emp.internetStatus),
+                      _DetailRow('GPS Accuracy', '${emp.accuracy.toInt()}m'),
+                      _DetailRow('Last Update', _timeAgo(emp.lastSyncAt)),
+                      const SizedBox(height: 16),
+                      Text(
+                        'TRACKING HEALTH',
+                        style: theme.textTheme.labelLarge,
+                      ),
+                      const SizedBox(height: 10),
+                      _HealthIndicator(
+                        label: 'GPS Signal',
+                        status: emp.gpsStatus,
+                        isGood: emp.gpsStatus == 'On',
+                      ),
+                      _HealthIndicator(
+                        label: 'Connection',
+                        status: emp.isOnline ? 'Active' : 'Lost',
+                        isGood: emp.isOnline,
+                      ),
+                      _HealthIndicator(
+                        label: 'Battery Level',
+                        status: emp.battery > 20 ? 'Good' : 'Low',
+                        isGood: emp.battery > 20,
+                      ),
                       const SizedBox(height: 24),
                       Text('DAILY ROUTE', style: theme.textTheme.labelLarge),
                       const SizedBox(height: 10),
@@ -591,7 +728,7 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                           Text(routeStart, style: theme.textTheme.bodySmall),
                           Flexible(
                             child: Text(
-                              '${state.playback.length} GPS/visit points • ${state.routeVisitPins.length} visits',
+                              '${state.playback.length} GPS history points',
                               textAlign: TextAlign.center,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodySmall,
@@ -608,7 +745,7 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                   child: ElevatedButton(
                     onPressed: state.playbackLoading
                         ? null
-                        : () => notifier.loadPlayback(employee!.id),
+                        : () => notifier.loadPlayback(emp.id),
                     child: Text(
                       state.playbackLoading
                           ? 'LOADING ROUTE...'
@@ -715,9 +852,17 @@ class _LiveEmployeeList extends StatelessWidget {
                   DataCell(
                     CircleAvatar(
                       radius: 16,
-                      backgroundColor: theme.colorScheme.surface,
-                      backgroundImage: NetworkImage(
-                        'https://i.pravatar.cc/150?u=${employee.id}',
+                      backgroundColor: theme.colorScheme.primary.withValues(
+                        alpha: 0.2,
+                      ),
+                      child: Text(
+                        employee.name.isNotEmpty
+                            ? employee.name[0].toUpperCase()
+                            : '?',
+                        style: TextStyle(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -728,25 +873,7 @@ class _LiveEmployeeList extends StatelessWidget {
                       '${employee.latitude.toStringAsFixed(5)}, ${employee.longitude.toStringAsFixed(5)}',
                     ),
                   ),
-                  DataCell(
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: employee.isOnline
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.error,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(employee.isOnline ? 'ONLINE' : 'STATIONARY'),
-                      ],
-                    ),
-                  ),
+                  DataCell(_EmployeeStatusBadge(employee: employee)),
                 ],
               );
             }).toList(),
@@ -782,6 +909,108 @@ BoxDecoration _panelDecoration(BuildContext context) {
   );
 }
 
+class _HealthIndicator extends StatelessWidget {
+  const _HealthIndicator({
+    required this.label,
+    required this.status,
+    required this.isGood,
+  });
+
+  final String label;
+  final String status;
+  final bool isGood;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: isGood
+                  ? const Color(0xFF54F1A6).withValues(alpha: 0.15)
+                  : const Color(0xFFFF6B6B).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              status,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: isGood
+                    ? const Color(0xFF54F1A6)
+                    : const Color(0xFFFF6B6B),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmployeeStatusBadge extends StatelessWidget {
+  const _EmployeeStatusBadge({required this.employee});
+
+  final LiveEmployee employee;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = employee.trackingStatus.toLowerCase();
+
+    // Determine status color and label
+    Color color;
+    String label;
+    IconData icon;
+
+    if (!employee.isOnline || status.contains('offline')) {
+      color = const Color(0xFFFF6B6B);
+      label = 'OFFLINE';
+      icon = Icons.circle;
+    } else if (status.contains('moving') || status.contains('travel')) {
+      color = const Color(0xFF54F1A6);
+      label = 'MOVING';
+      icon = Icons.directions_car;
+    } else if (status.contains('idle')) {
+      color = const Color(0xFF5CE1E6);
+      label = 'IDLE';
+      icon = Icons.pause;
+    } else {
+      color = const Color(0xFF54F1A6);
+      label = 'ONLINE';
+      icon = Icons.circle;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 12),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 double _speedKmh(LiveEmployee employee) {
   return employee.speed * 3.6;
 }
@@ -808,4 +1037,19 @@ String _dateLabel(DateTime date) {
 String _timeLabel(DateTime date) {
   final local = date.toLocal();
   return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+}
+
+String _timeAgo(DateTime date) {
+  final now = DateTime.now();
+  final difference = now.difference(date);
+
+  if (difference.inSeconds < 60) {
+    return 'Just now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes}m ago';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours}h ago';
+  } else {
+    return '${difference.inDays}d ago';
+  }
 }

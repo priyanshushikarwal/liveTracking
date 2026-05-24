@@ -16,17 +16,28 @@ class LiveStatusPage extends ConsumerWidget {
       title: 'Live Status',
       body: ListView(
         children: [
-          SwitchListTile(
+          ListTile(
             contentPadding: EdgeInsets.zero,
+            leading: Icon(
+              tracking.trackingEnabled
+                  ? Icons.radar_outlined
+                  : Icons.location_searching_outlined,
+            ),
             title: const Text('Duty tracking'),
             subtitle: Text(
               tracking.trackingEnabled
                   ? 'Broadcasting live field status'
-                  : 'Tracking paused',
+                  : 'Starting automatic tracking',
             ),
-            value: tracking.trackingEnabled,
-            onChanged: (_) =>
-                ref.read(trackingViewModelProvider.notifier).toggleTracking(),
+            trailing: Chip(
+              label: Text(
+                tracking.permissionDenied
+                    ? 'PERMISSION NEEDED'
+                    : tracking.trackingEnabled
+                    ? 'ACTIVE'
+                    : 'STARTING',
+              ),
+            ),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -47,13 +58,6 @@ class LiveStatusPage extends ConsumerWidget {
                   ? 'No ping captured yet'
                   : '${tracking.lastLocation!.latitude.toStringAsFixed(5)}, ${tracking.lastLocation!.longitude.toStringAsFixed(5)}',
             ),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => ref
-                .read(trackingViewModelProvider.notifier)
-                .captureLocationPing(),
-            icon: const Icon(Icons.near_me_outlined),
-            label: const Text('SEND LIVE PING'),
           ),
         ],
       ),

@@ -165,11 +165,28 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
   }) async {
     state = state.copyWith(loading: true, clearError: true, clearMessage: true);
     try {
+      // Validate background location permission before check-in
+      final hasBackgroundPermission = await _ref
+          .read(locationServiceProvider)
+          .hasBackgroundPermission();
+      if (!hasBackgroundPermission) {
+        state = state.copyWith(
+          loading: false,
+          error: 'BACKGROUND_PERMISSION_REQUIRED',
+        );
+        return;
+      }
+
       final record = await _ref
           .read(attendanceRepositoryProvider)
           .checkIn(await _payloadFor(context, selfiePath));
+
+      // Start background tracking service
       await _ref.read(backgroundTrackingServiceProvider).start();
+
+      // Send initial location ping
       await _ref.read(trackingViewModelProvider.notifier).captureLocationPing();
+
       state = state.copyWith(
         loading: false,
         activeRecord: record,
@@ -198,7 +215,6 @@ class AttendanceViewModel extends StateNotifier<AttendanceState> {
       final updated = await _ref
           .read(attendanceRepositoryProvider)
           .checkOut(await _payloadFor(context, selfiePath));
-      await _ref.read(backgroundTrackingServiceProvider).stop();
       final records = state.records
           .map((record) => record.id == activeRecord.id ? updated : record)
           .toList(growable: false);

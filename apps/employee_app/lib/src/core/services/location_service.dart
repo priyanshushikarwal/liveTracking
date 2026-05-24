@@ -18,6 +18,27 @@ class LocationService {
     return permission;
   }
 
+  Future<bool> hasBackgroundPermission() async {
+    final permission = await Geolocator.checkPermission();
+    return permission == LocationPermission.always;
+  }
+
+  Future<LocationPermission> requestBackgroundPermission() async {
+    var permission = await Geolocator.checkPermission();
+    
+    // First request foreground permission if needed
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    
+    // Then request background permission
+    if (permission == LocationPermission.whileInUse) {
+      permission = await Geolocator.requestPermission();
+    }
+    
+    return permission;
+  }
+
   Future<LocationSnapshot> currentLocation() async {
     final serviceEnabled = await isServiceEnabled();
     if (!serviceEnabled) {

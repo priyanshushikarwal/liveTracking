@@ -210,11 +210,56 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
   StreamSubscription<List<Map<String, dynamic>>>? _visitSubscription;
   StreamSubscription<List<Map<String, dynamic>>>? _historySubscription;
   Timer? _playbackTimer;
+  Timer? _heartbeatTimer;
   Map<String, Map<String, dynamic>> _profilesById = const {};
 
   Future<void> _initialize() async {
     await refresh();
     await _subscribeRealtime();
+    _startHeartbeatTimer();
+  }
+
+  void _startHeartbeatTimer() {
+    _heartbeatTimer?.cancel();
+    // Refresh every 15 seconds to update online/offline status based on time
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _refreshOnlineStatus();
+    });
+  }
+
+  void _refreshOnlineStatus() {
+    if (state.employees.isEmpty) return;
+
+    final nowUtc = DateTime.now().toUtc();
+    var hasChanges = false;
+
+    final updatedEmployees = state.employees
+        .map((employee) {
+          // Skip employees with no location data
+          if (employee.lastSyncAt.millisecondsSinceEpoch == 0) {
+            return employee;
+          }
+
+          final recordedAtUtc = employee.lastSyncAt.isUtc
+              ? employee.lastSyncAt
+              : employee.lastSyncAt.toUtc();
+          final secondsDiff = nowUtc.difference(recordedAtUtc).inSeconds;
+          final isOnline = secondsDiff <= 60;
+
+          if (employee.isOnline != isOnline) {
+            debugPrint(
+              '[TrackingDebug] ${employee.name} status changed: ${employee.isOnline} -> $isOnline (last update ${secondsDiff}s ago)',
+            );
+            hasChanges = true;
+            return employee.copyWith(isOnline: isOnline);
+          }
+          return employee;
+        })
+        .toList(growable: false);
+
+    if (hasChanges) {
+      state = state.copyWith(employees: updatedEmployees);
+    }
   }
 
   Future<void> refresh() async {
@@ -226,6 +271,7 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
                   .select(
                     'id, auth_user_id, full_name, employee_id, department_id, team_id, phone, role, status, organization_id, meta',
                   )
+                  .ilike('role', 'employee')
               as List<dynamic>? ??
           const [];
 
@@ -256,19 +302,6 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
       debugPrint(
         '[TrackingDebug] live_locations loaded=${locationRows.length}',
       );
-
-      final visitRows =
-          await _supabase
-                  .from('visits')
-                  .select(
-                    'id, client_name, employee_id, site_address, notes, status, end_lat, end_lng, start_lat, start_lng, client_lat, client_lng, ended_at, started_at, created_at, visit_photos!visit_photos_visit_id_fkey(public_url, storage_path, latitude, longitude, readable_location, created_at), visit_notes!visit_notes_visit_id_fkey(id)',
-                  )
-                  .neq('status', 'CANCELLED')
-                  .order('created_at', ascending: false)
-                  .limit(200)
-              as List<dynamic>? ??
-          const [];
-      debugPrint('[TrackingDebug] visit rows loaded=${visitRows.length}');
 
       final historyRows =
           await _supabase
@@ -317,8 +350,15 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
               .where((employee) => employee.id.isNotEmpty)
               .toList(growable: false)
             ..sort((a, b) => b.lastSyncAt.compareTo(a.lastSyncAt));
+
+      // Debug: Log employee status
+      for (final emp in employees) {
+        debugPrint(
+          '[TrackingDebug] ${emp.name}: isOnline=${emp.isOnline}, lastSync=${emp.lastSyncAt}, status=${emp.trackingStatus}',
+        );
+      }
       debugPrint(
-        '[TrackingDebug] employee markers prepared=${employees.length}',
+        '[TrackingDebug] employee markers prepared=${employees.length}, online=${employees.where((e) => e.isOnline).length}',
       );
 
       final selectedEmployeeId = _resolveSelectedEmployee(
@@ -341,27 +381,18 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
           ),
         );
       }
-      final nextVisitPins = visitRows
-          .map(
-            (row) => _visitPinFromJson(Map<String, dynamic>.from(row as Map)),
-          )
-          .where((pin) => pin.latitude != 0 || pin.longitude != 0)
-          .toList(growable: false);
-
       state = state.copyWith(
         loading: false,
         employees: employees,
-        visitPins: nextVisitPins,
-        routeVisitPins: state.hasDailyRoute
-            ? _routePinsFor(nextVisitPins, selectedEmployeeId, state.routeDate)
-            : const [],
+        visitPins: const [],
+        routeVisitPins: const [],
         routeTrails: nextTrails,
         selectedEmployeeId: selectedEmployeeId,
         connectionStatus: DashboardConnectionStatus.connected,
         clearError: true,
       );
       debugPrint(
-        '[TrackingDebug] marker rendered employees=${employees.where((e) => e.latitude != 0 || e.longitude != 0).length} routes=${nextTrails.length} visitPins=${state.visitPins.length}',
+        '[TrackingDebug] marker rendered employees=${employees.where((e) => e.latitude != 0 || e.longitude != 0).length} routes=${nextTrails.length}',
       );
     } catch (error) {
       state = state.copyWith(
@@ -651,35 +682,12 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
           .map(_historyPointFromJson)
           .where((point) => point.latitude != 0 || point.longitude != 0)
           .toList(growable: false);
-      final visitRows =
-          await _supabase
-                  .from('visits')
-                  .select(
-                    'id, client_name, employee_id, site_address, notes, status, end_lat, end_lng, start_lat, start_lng, client_lat, client_lng, ended_at, started_at, created_at, visit_photos!visit_photos_visit_id_fkey(public_url, storage_path, latitude, longitude, readable_location, created_at), visit_notes!visit_notes_visit_id_fkey(id)',
-                  )
-                  .eq('employee_id', employeeId)
-                  .neq('status', 'CANCELLED')
-                  .order('created_at', ascending: false)
-                  .limit(500)
-              as List<dynamic>? ??
-          const [];
-      final routeVisitPins = visitRows
-          .map(
-            (row) => _visitPinFromJson(Map<String, dynamic>.from(row as Map)),
-          )
-          .where(
-            (pin) =>
-                (pin.latitude != 0 || pin.longitude != 0) &&
-                _sameLocalDay(pin.submittedAt, routeDate),
-          )
-          .toList(growable: false);
-      final visitPoints = routeVisitPins.map(_playbackPointFromVisit);
-      final dailyRoute = _mergeRoutePoints([...playback, ...visitPoints]);
+      final dailyRoute = _mergeRoutePoints(playback);
 
       state = state.copyWith(
         playbackLoading: false,
         playback: dailyRoute,
-        routeVisitPins: routeVisitPins,
+        routeVisitPins: const [],
         routeTrails: {...state.routeTrails, employeeId: _trimTrail(dailyRoute)},
         playbackIndex: dailyRoute.isEmpty ? 0 : dailyRoute.length - 1,
       );
@@ -753,37 +761,6 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
     return List<PlaybackPoint>.unmodifiable(merged);
   }
 
-  PlaybackPoint _playbackPointFromVisit(VisitMapPin pin) {
-    return PlaybackPoint(
-      latitude: pin.latitude,
-      longitude: pin.longitude,
-      accuracy: 0,
-      speed: 0,
-      distanceMeters: 0,
-      recordedAt: pin.submittedAt,
-      activity: 'VISIT',
-      address:
-          pin.locationLabel ??
-          '${pin.latitude.toStringAsFixed(5)}, ${pin.longitude.toStringAsFixed(5)}',
-      visitId: pin.id,
-    );
-  }
-
-  List<VisitMapPin> _routePinsFor(
-    List<VisitMapPin> pins,
-    String? employeeId,
-    DateTime date,
-  ) {
-    if (employeeId == null || employeeId.isEmpty) return const [];
-    return pins
-        .where(
-          (pin) =>
-              pin.employeeId == employeeId &&
-              _sameLocalDay(pin.submittedAt, date),
-        )
-        .toList(growable: false);
-  }
-
   bool _sameLocalDay(DateTime left, DateTime right) {
     final a = left.toLocal();
     final b = right.toLocal();
@@ -825,67 +802,10 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
     return const Color(0xFF54F1A6);
   }
 
-  VisitMapPin _visitPinFromJson(Map<String, dynamic> json) {
-    final employeeId = json['employee_id']?.toString() ?? '';
-    final profile = _profileFor(employeeId);
-    final photos = json['visit_photos'] as List<dynamic>? ?? const [];
-    final notes = json['visit_notes'] as List<dynamic>? ?? const [];
-    String? photoUrl;
-    double? photoLatitude;
-    double? photoLongitude;
-    String? photoLocation;
-    if (photos.isNotEmpty) {
-      final first = Map<String, dynamic>.from(photos.first as Map);
-      photoUrl =
-          first['public_url'] as String? ?? first['storage_path'] as String?;
-      photoLatitude = (first['latitude'] as num?)?.toDouble();
-      photoLongitude = (first['longitude'] as num?)?.toDouble();
-      photoLocation = first['readable_location'] as String?;
-    }
-    final latitude =
-        (json['end_lat'] as num?)?.toDouble() ??
-        (json['start_lat'] as num?)?.toDouble() ??
-        photoLatitude ??
-        (json['client_lat'] as num?)?.toDouble() ??
-        0;
-    final longitude =
-        (json['end_lng'] as num?)?.toDouble() ??
-        (json['start_lng'] as num?)?.toDouble() ??
-        photoLongitude ??
-        (json['client_lng'] as num?)?.toDouble() ??
-        0;
-    return VisitMapPin(
-      id: json['id']?.toString() ?? '',
-      employeeId: employeeId,
-      clientName: json['client_name'] as String? ?? 'Field Visit',
-      notes: json['notes'] as String? ?? '',
-      latitude: latitude,
-      longitude: longitude,
-      submittedAt:
-          DateTime.tryParse(json['ended_at'] as String? ?? '') ??
-          DateTime.tryParse(json['started_at'] as String? ?? '') ??
-          DateTime.tryParse(json['created_at'] as String? ?? '') ??
-          DateTime.now(),
-      photoUrl: photoUrl,
-      status: json['status']?.toString() ?? 'COMPLETED',
-      photoCount: photos.length,
-      notesCount:
-          notes.length +
-          ((json['notes']?.toString().isNotEmpty ?? false) ? 1 : 0),
-      employeeName:
-          profile['full_name'] as String? ??
-          profile['email'] as String? ??
-          'Employee',
-      locationLabel:
-          photoLocation ??
-          (json['site_address'] as String?) ??
-          '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}',
-    );
-  }
-
   @override
   void dispose() {
     _playbackTimer?.cancel();
+    _heartbeatTimer?.cancel();
     _subscription?.cancel();
     _visitSubscription?.cancel();
     _historySubscription?.cancel();
@@ -925,10 +845,6 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
     };
   }
 
-  Map<String, dynamic> _profileFor(String employeeId) {
-    return _profilesById[employeeId] ?? const <String, dynamic>{};
-  }
-
   LiveEmployee _fromJson(Map<String, dynamic> json) {
     final meta = Map<String, dynamic>.from(
       (json['profile_meta'] ?? json['meta']) as Map? ?? const {},
@@ -946,11 +862,10 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
     return LiveEmployee(
       id: json['id'] as String? ?? '',
       employeeCode:
-          json['profile_employee_id'] as String? ??
-          json['employee_code'] as String? ??
-          meta['employeeCode'] as String? ??
-          json['id'] as String? ??
-          '',
+          _cleanEmployeeCode(json['profile_employee_id']) ??
+          _cleanEmployeeCode(json['employee_code']) ??
+          _cleanEmployeeCode(meta['employeeCode']) ??
+          'Employee ID pending',
       name:
           json['full_name'] as String? ??
           json['fullName'] as String? ??
@@ -994,7 +909,29 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
   }
 
   bool _isOnline(DateTime recordedAt) {
-    if (recordedAt.millisecondsSinceEpoch == 0) return false;
-    return DateTime.now().difference(recordedAt.toLocal()).inMinutes <= 10;
+    if (recordedAt.millisecondsSinceEpoch == 0) {
+      debugPrint(
+        '[TrackingDebug] _isOnline: millisecondsSinceEpoch == 0, returning false',
+      );
+      return false;
+    }
+    // Compare in UTC to avoid timezone issues
+    final nowUtc = DateTime.now().toUtc();
+    final recordedAtUtc = recordedAt.isUtc ? recordedAt : recordedAt.toUtc();
+    final diffSeconds = nowUtc.difference(recordedAtUtc).inSeconds;
+    debugPrint(
+      '[TrackingDebug] _isOnline: now=$nowUtc, recorded=$recordedAtUtc, diff=${diffSeconds}s, online=${diffSeconds <= 60}',
+    );
+    return diffSeconds <= 60;
+  }
+
+  String? _cleanEmployeeCode(Object? value) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isEmpty) return null;
+    final uuidPattern = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+    if (uuidPattern.hasMatch(text)) return null;
+    return text;
   }
 }

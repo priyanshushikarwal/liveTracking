@@ -85,7 +85,10 @@ class _LiveTrackingMapState extends State<LiveTrackingMap>
 
   @override
   Widget build(BuildContext context) {
-    final markers = _clusterMarkers(widget.employees, _zoom);
+    final markerEmployees = widget.employees
+        .where((employee) => employee.latitude != 0 || employee.longitude != 0)
+        .toList(growable: false);
+    final markers = _clusterMarkers(markerEmployees, _zoom);
     final selectedTrail = widget.selectedEmployee == null
         ? const <PlaybackPoint>[]
         : widget.routeTrails[widget.selectedEmployee!.id] ??

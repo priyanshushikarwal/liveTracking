@@ -28,15 +28,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onChanged: (_) => ref.read(themeModeProvider.notifier).toggle(),
           ),
           SwitchListTile(
-            title: const Text('Background Tracking'),
-            subtitle: const Text(
-              'Battery-optimized tracking with offline sync queue',
-            ),
-            value: trackingState.trackingEnabled,
-            onChanged: (_) =>
-                ref.read(trackingViewModelProvider.notifier).toggleTracking(),
-          ),
-          SwitchListTile(
             title: const Text('Notifications'),
             subtitle: const Text(
               'Admin alerts, reminders and policy announcements',
@@ -45,14 +36,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             onChanged: (value) => setState(() => notificationsEnabled = value),
           ),
           ListTile(
-            title: const Text('Offline Queue'),
+            title: const Text('Tracking Status'),
             subtitle: Text(
-              '${trackingState.pendingSyncItems} item(s) waiting to sync',
+              trackingState.trackingEnabled
+                  ? 'Tracking Active'
+                  : 'Starting automatic tracking',
             ),
-            trailing: OutlinedButton(
-              onPressed: () =>
-                  ref.read(trackingViewModelProvider.notifier).syncNow(),
-              child: const Text('SYNC'),
+            trailing: Chip(
+              label: Text('${trackingState.pendingSyncItems} queued'),
             ),
           ),
         ],

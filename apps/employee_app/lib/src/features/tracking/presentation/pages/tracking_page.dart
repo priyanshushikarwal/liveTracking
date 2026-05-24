@@ -3,9 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../../core/di/providers.dart';
+import '../../../../core/services/location_service.dart';
 import '../../../../core/widgets/app_shell.dart';
-import '../viewmodels/tracking_view_model.dart';
-import '../widgets/tracking_map.dart';
 
 class TrackingPage extends ConsumerWidget {
   const TrackingPage({super.key});
@@ -13,186 +12,85 @@ class TrackingPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(trackingViewModelProvider);
-    final notifier = ref.read(trackingViewModelProvider.notifier);
+    final visits = ref.watch(visitViewModelProvider).visits;
     final theme = Theme.of(context);
     final lastLocation = state.lastLocation;
+    final distanceKm = _distanceKm(state.route);
+    final activeTime = _activeTimeLabel(state.route);
+    final visitsToday = visits.where((visit) {
+      return visit.isCompleted &&
+          _sameLocalDay(visit.startTime, DateTime.now());
+    }).length;
 
     return AppShell(
       title: 'Tracking',
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: theme.colorScheme.outline),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _StatusChip(
-                      icon: state.trackingEnabled
-                          ? Icons.radar
-                          : Icons.pause_circle_outline,
-                      label: state.trackingEnabled ? 'Tracking live' : 'Paused',
-                      color: state.trackingEnabled
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.secondary,
-                    ),
-                    _StatusChip(
-                      icon:
-                          state.connectionStatus ==
-                              TrackingConnectionStatus.connected
-                          ? Icons.wifi_tethering
-                          : Icons.wifi_off,
-                      label: switch (state.connectionStatus) {
-                        TrackingConnectionStatus.connected => 'Socket live',
-                        TrackingConnectionStatus.connecting =>
-                          'Socket connecting',
-                        TrackingConnectionStatus.disconnected =>
-                          'Socket offline',
-                      },
-                      color: switch (state.connectionStatus) {
-                        TrackingConnectionStatus.connected =>
-                          theme.colorScheme.primary,
-                        TrackingConnectionStatus.connecting =>
-                          theme.colorScheme.secondary,
-                        TrackingConnectionStatus.disconnected =>
-                          theme.colorScheme.error,
-                      },
-                    ),
-                    _StatusChip(
-                      icon: state.gpsEnabled ? Icons.gps_fixed : Icons.gps_off,
-                      label: state.gpsEnabled ? 'GPS ready' : 'GPS unavailable',
-                      color: state.gpsEnabled
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.error,
-                    ),
-                    _StatusChip(
-                      icon: Icons.battery_6_bar,
-                      label: 'Battery ${state.batteryPercent}%',
-                      color: theme.colorScheme.primary,
-                    ),
-                    _StatusChip(
-                      icon: Icons.network_check,
-                      label: state.internetStatus,
-                      color: Colors.white,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  height: 440,
-                  child: TrackingMap(
-                    routePoints: state.route
-                        .map((point) => LatLng(point.latitude, point.longitude))
-                        .toList(growable: false),
-                    serverRoutePoints: state.serverRoute
-                        .map((point) => LatLng(point.latitude, point.longitude))
-                        .toList(growable: false),
-                    currentPoint: lastLocation == null
-                        ? null
-                        : LatLng(lastLocation.latitude, lastLocation.longitude),
-                    accuracyMeters: lastLocation?.accuracy ?? 0,
-                    followEmployee: state.followEmployee,
-                    onToggleFollow: notifier.toggleFollowEmployee,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _GlassStatCard(
-                        title: 'Latest fix',
-                        value: lastLocation == null
-                            ? 'Waiting for GPS'
-                            : '${lastLocation.latitude.toStringAsFixed(5)}, ${lastLocation.longitude.toStringAsFixed(5)}',
-                        hint: lastLocation == null
-                            ? 'Grant location access to start live plotting'
-                            : 'Accuracy ${lastLocation.accuracy.toStringAsFixed(0)} m',
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: _GlassStatCard(
-                        title: 'Route trail',
-                        value: '${state.route.length} points',
-                        hint: state.serverAcknowledgedAt == null
-                            ? 'Awaiting server acknowledgment'
-                            : 'Server synced ${_timeLabel(state.serverAcknowledgedAt!)}',
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 420,
-                      child: SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('BACKGROUND LIVE TRACKING'),
-                        subtitle: const Text(
-                          'Auto-publish movement updates with queue fallback',
-                        ),
-                        value: state.trackingEnabled,
-                        onChanged: state.loading
-                            ? null
-                            : (_) => notifier.toggleTracking(),
-                      ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: state.loading
-                          ? null
-                          : notifier.captureLocationPing,
-                      icon: const Icon(Icons.my_location),
-                      label: const Text('PING NOW'),
-                    ),
-                    const SizedBox(width: 12),
-                    OutlinedButton.icon(
-                      onPressed: state.loading ? null : notifier.syncNow,
-                      icon: const Icon(Icons.sync),
-                      label: const Text('SYNC'),
-                    ),
-                  ],
-                ),
-                if (state.lastSyncSummary != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    state.lastSyncSummary!,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ],
-                if (state.permissionDenied) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    'Location permission is blocked. Enable it in app settings to resume live tracking.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.error,
-                    ),
-                  ),
-                ],
-                if (state.error != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    state.error!.replaceFirst('Exception: ', ''),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.error,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+          Text(
+            'Today\'s Tracking Summary',
+            style: theme.textTheme.headlineLarge,
           ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth > 720;
+              return GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: wide ? 4 : 2,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: wide ? 1.15 : 1.05,
+                children: [
+                  _GlassStatCard(
+                    title: 'Distance Today',
+                    value: '${distanceKm.toStringAsFixed(1)} km',
+                    hint: lastLocation == null
+                        ? 'Waiting for GPS'
+                        : 'Updated ${_timeLabel(lastLocation.timestamp)}',
+                  ),
+                  _GlassStatCard(
+                    title: 'Active Time',
+                    value: activeTime,
+                    hint: '${state.route.length} route points today',
+                  ),
+                  _GlassStatCard(
+                    title: 'Visits',
+                    value: '$visitsToday',
+                    hint: 'Completed today',
+                  ),
+                  _GlassStatCard(
+                    title: 'Status',
+                    value: state.permissionDenied
+                        ? 'Permission Needed'
+                        : state.trackingEnabled
+                        ? 'Tracking Active'
+                        : 'Starting',
+                    hint: state.internetStatus,
+                  ),
+                ],
+              );
+            },
+          ),
+          if (state.permissionDenied) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Location permission is required for duty tracking.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ],
+          if (state.error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              state.error!.replaceFirst('Exception: ', ''),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -204,6 +102,39 @@ class TrackingPage extends ConsumerWidget {
     final minute = local.minute.toString().padLeft(2, '0');
     final second = local.second.toString().padLeft(2, '0');
     return '$hour:$minute:$second';
+  }
+
+  static double _distanceKm(List<LocationSnapshot> route) {
+    if (route.length < 2) return 0;
+    const distance = Distance();
+    var meters = 0.0;
+    for (var index = 1; index < route.length; index++) {
+      final previous = route[index - 1];
+      final current = route[index];
+      meters += distance.as(
+        LengthUnit.Meter,
+        LatLng(previous.latitude, previous.longitude),
+        LatLng(current.latitude, current.longitude),
+      );
+    }
+    return meters / 1000;
+  }
+
+  static String _activeTimeLabel(List<LocationSnapshot> route) {
+    if (route.length < 2) return '0m';
+    final start = route.first.timestamp;
+    final end = route.last.timestamp;
+    final duration = end.difference(start);
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    if (hours <= 0) return '${minutes}m';
+    return '${hours}h ${minutes}m';
+  }
+
+  static bool _sameLocalDay(DateTime left, DateTime right) {
+    final a = left.toLocal();
+    final b = right.toLocal();
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 }
 
@@ -238,41 +169,6 @@ class _GlassStatCard extends StatelessWidget {
           Text(value, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 6),
           Text(hint, style: Theme.of(context).textTheme.bodyMedium),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.icon,
-    required this.label,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.58)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18, color: color),
-          const SizedBox(width: 8),
-          Text(
-            label.toUpperCase(),
-            style: Theme.of(context).textTheme.labelLarge,
-          ),
         ],
       ),
     );

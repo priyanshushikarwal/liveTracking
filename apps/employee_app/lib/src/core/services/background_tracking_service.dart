@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 
 import 'package:battery_plus/battery_plus.dart';
@@ -12,6 +13,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../config/app_config.dart';
 import '../constants/app_constants.dart';
+import '../supabase/supabase_client.dart';
 
 final backgroundTrackingServiceProvider = Provider<BackgroundTrackingService>((
   ref,
@@ -180,11 +182,16 @@ class TrackingBackgroundLoop {
   final _connectivity = Connectivity();
   final _dio = Dio(
     BaseOptions(
-      baseUrl: AppConfig.apiBaseUrl,
+      baseUrl: '${SupabaseClientBootstrap.supabaseUrl}/rest/v1',
       connectTimeout: const Duration(seconds: 12),
       receiveTimeout: const Duration(seconds: 12),
       sendTimeout: const Duration(seconds: 12),
-      headers: const {'Accept': 'application/json'},
+      headers: const {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'apikey': SupabaseClientBootstrap.supabaseAnonKey,
+        'Prefer': 'return=representation',
+      },
     ),
   );
 
@@ -195,7 +202,8 @@ class TrackingBackgroundLoop {
   Future<void> start() async {
     _timer?.cancel();
     await _tick();
-    _timer = Timer.periodic(const Duration(seconds: 15), (_) {
+    // Update every 10 seconds to ensure timely presence updates
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
       unawaited(_tick());
     });
   }
@@ -210,7 +218,20 @@ class TrackingBackgroundLoop {
       final token = await const FlutterSecureStorage().read(
         key: AppConstants.secureTokenKey,
       );
+      final sessionRaw = await const FlutterSecureStorage().read(
+        key: AppConstants.secureEmployeeSessionKey,
+      );
       if (token == null || token.isEmpty) {
+        debugPrint('[TrackingDebug] background tick skipped: missing token');
+        return;
+      }
+      final session = _decodeSession(sessionRaw);
+      final employeeId = session.employeeId;
+      final organizationId = session.organizationId;
+      if (employeeId.isEmpty || organizationId.isEmpty) {
+        debugPrint(
+          '[TrackingDebug] background tick skipped: missing employee/org identity',
+        );
         return;
       }
 
@@ -219,6 +240,9 @@ class TrackingBackgroundLoop {
       if (!serviceEnabled ||
           permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
+        debugPrint(
+          '[TrackingDebug] background tick skipped: service=$serviceEnabled permission=$permission',
+        );
         return;
       }
 
@@ -236,35 +260,107 @@ class TrackingBackgroundLoop {
       final connectivity = await _connectivity.checkConnectivity();
       final internetStatus = _label(connectivity);
       final activity = _resolveActivity(position);
+      final recordedAt = position.timestamp.toIso8601String();
+      final commonPayload = {
+        'employee_id': employeeId,
+        'organization_id': organizationId,
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'accuracy': position.accuracy,
+        'speed': position.speed < 0 ? 0 : position.speed,
+        'bearing': position.heading,
+        'battery_percent': batteryPercent,
+        'internet_status': internetStatus,
+        'recorded_at': recordedAt,
+        'activity': activity,
+        'is_mocked': position.isMocked,
+      };
 
-      await _dio.post(
-        '/tracking/ingest',
-        data: {
-          'latitude': position.latitude,
-          'longitude': position.longitude,
-          'accuracy': position.accuracy,
-          'speed': position.speed,
-          'bearing': position.heading,
-          'batteryPercent': batteryPercent,
-          'internetStatus': internetStatus,
-          'recordedAt': position.timestamp.toIso8601String(),
-          'activity': activity,
-          'isMocked': position.isMocked,
-        },
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      debugPrint(
+        '[TrackingDebug] background uploading employee=$employeeId lat=${position.latitude} lng=${position.longitude} status=$activity',
       );
+      await _insertTrackingRow(
+        table: 'live_locations',
+        token: token,
+        enrichedData: {
+          ...commonPayload,
+          'employee_name': session.employeeName,
+          'tracking_status': activity,
+          'network_status': internetStatus,
+          'timestamp': recordedAt,
+        },
+        fallbackData: commonPayload,
+      );
+      await _insertTrackingRow(
+        table: 'location_history',
+        token: token,
+        enrichedData: {
+          ...commonPayload,
+          'employee_name': session.employeeName,
+          'tracking_status': activity,
+          'network_status': internetStatus,
+          'timestamp': recordedAt,
+        },
+        fallbackData: commonPayload,
+      );
+      debugPrint('[TrackingDebug] background upload complete');
 
       _lastSentPosition = position;
       _lastSentAt = DateTime.now();
       if (_service is AndroidServiceInstance) {
+        final now = DateTime.now();
+        final timeStr =
+            '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
         _service.setForegroundNotificationInfo(
-          title: 'Live tracking active',
+          title: 'DoonInfra Field Tracking',
           content:
-              '${activity == 'MOVING' ? 'Moving' : 'Idle'} • ${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+              '${activity == 'MOVING' ? 'Moving' : 'Idle'} - $timeStr - $batteryPercent% battery',
         );
       }
-    } catch (_) {
+    } catch (error) {
+      debugPrint('[TrackingDebug] background upload failed: $error');
       // Background service keeps retrying on next cycle.
+    }
+  }
+
+  Future<void> _insertTrackingRow({
+    required String table,
+    required String token,
+    required Map<String, dynamic> enrichedData,
+    required Map<String, dynamic> fallbackData,
+  }) async {
+    try {
+      await _dio.post(
+        '/$table',
+        data: enrichedData,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    } catch (error) {
+      debugPrint(
+        '[TrackingDebug] background $table enriched insert failed, retrying compatible payload: $error',
+      );
+      await _dio.post(
+        '/$table',
+        data: fallbackData,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+    }
+  }
+
+  _BackgroundSession _decodeSession(String? raw) {
+    if (raw == null || raw.isEmpty) return const _BackgroundSession();
+    try {
+      final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      final employee = Map<String, dynamic>.from(
+        map['employee'] as Map? ?? const {},
+      );
+      return _BackgroundSession(
+        employeeId: employee['id']?.toString() ?? '',
+        organizationId: employee['organizationId']?.toString() ?? '',
+        employeeName: employee['name']?.toString() ?? '',
+      );
+    } catch (_) {
+      return const _BackgroundSession();
     }
   }
 
@@ -276,9 +372,10 @@ class TrackingBackgroundLoop {
 
     final elapsed = now.difference(_lastSentAt!);
     final moving = position.speed >= 1.2;
+    // Updated: 10s when moving, 30s when idle
     final interval = moving
-        ? const Duration(seconds: 8)
-        : const Duration(seconds: 45);
+        ? const Duration(seconds: 10)
+        : const Duration(seconds: 30);
 
     final distance = Geolocator.distanceBetween(
       _lastSentPosition!.latitude,
@@ -301,4 +398,16 @@ class TrackingBackgroundLoop {
     if (results.contains(ConnectivityResult.vpn)) return 'VPN';
     return 'Offline';
   }
+}
+
+class _BackgroundSession {
+  const _BackgroundSession({
+    this.employeeId = '',
+    this.organizationId = '',
+    this.employeeName = '',
+  });
+
+  final String employeeId;
+  final String organizationId;
+  final String employeeName;
 }

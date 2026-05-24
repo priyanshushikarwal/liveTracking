@@ -50,6 +50,7 @@ class _VisitsPageState extends State<VisitsPage> {
           .select(
             'id, auth_user_id, employee_id, full_name, email, role, organization_id, meta',
           )
+          .ilike('role', 'employee')
           .order('full_name', ascending: true);
       if (!mounted) return;
       setState(() {
@@ -67,7 +68,7 @@ class _VisitsPageState extends State<VisitsPage> {
       setState(() {
         _error = '$error';
         _loading = false;
-        _visits = _demoVisits;
+        _visits = const [];
       });
     }
   }
@@ -349,11 +350,7 @@ class _VisitsPageState extends State<VisitsPage> {
                     .map(
                       (employee) => DropdownMenuItem(
                         value: employee['id'] as String,
-                        child: Text(
-                          employee['full_name'] as String? ??
-                              employee['email'] as String? ??
-                              'Employee',
-                        ),
+                        child: Text(_employeeDropdownLabel(employee)),
                       ),
                     )
                     .toList(),
@@ -1214,39 +1211,11 @@ double? _lng(Map<String, dynamic> visit) {
       ((visit['clients'] as Map?)?['longitude'] as num?)?.toDouble();
 }
 
-final _demoVisits = [
-  {
-    'id': 'demo-1',
-    'client_name': 'Metro Retail LLP',
-    'employee_id': 'employee-1',
-    'priority': 'HIGH',
-    'status': 'STARTED',
-    'start_lat': 28.6139,
-    'start_lng': 77.2090,
-    'outcome': null,
-    'productivity_score': 74,
-    'visit_photos': [{}],
-    'visit_notes': [{}],
-    'visit_documents': [],
-    'visit_audio_notes': [],
-    'visit_signatures': [],
-    'visit_followups': [{}],
-  },
-  {
-    'id': 'demo-2',
-    'client_name': 'Zenith Buildcon',
-    'employee_id': 'employee-2',
-    'priority': 'MEDIUM',
-    'status': 'COMPLETED',
-    'end_lat': 28.4595,
-    'end_lng': 77.0266,
-    'outcome': 'Installation Approved',
-    'productivity_score': 92,
-    'visit_photos': [{}, {}],
-    'visit_notes': [{}],
-    'visit_documents': [{}],
-    'visit_audio_notes': [{}],
-    'visit_signatures': [{}],
-    'visit_followups': [],
-  },
-];
+String _employeeDropdownLabel(Map<String, dynamic> employee) {
+  final name = employee['full_name']?.toString().trim().isNotEmpty == true
+      ? employee['full_name'].toString()
+      : employee['email']?.toString() ?? 'Employee';
+  final code = employee['employee_id']?.toString().trim();
+  if (code == null || code.isEmpty) return '$name (Employee ID pending)';
+  return '$name ($code)';
+}

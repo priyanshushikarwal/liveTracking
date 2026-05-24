@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/di/providers.dart';
+import '../../../../core/services/location_service.dart';
 import '../../../../core/widgets/app_shell.dart';
 import '../../domain/entities/attendance_record.dart';
 import '../viewmodels/attendance_view_model.dart';
@@ -76,6 +78,24 @@ class _AttendancePageState extends ConsumerState<AttendancePage> {
 
   Future<void> _runFlow(String type) async {
     final notifier = ref.read(attendanceViewModelProvider.notifier);
+    
+    // Check background permission before check-in
+    if (type == 'CHECK-IN') {
+      final locationService = ref.read(locationServiceProvider);
+      final hasBackgroundPermission = await locationService.hasBackgroundPermission();
+      
+      if (!hasBackgroundPermission) {
+        if (!mounted) return;
+        final result = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => const BackgroundPermissionPage(),
+          ),
+        );
+        if (result != true) return;
+      }
+    }
+    
     try {
       final verification = await notifier.prepareAttendance(
         attendanceType: type,
@@ -414,4 +434,253 @@ class _ReadinessItem {
   final String label;
   final String value;
   final bool ok;
+}
+
+/// Background Permission Request Page
+/// Shown when employee tries to check in without background location permission
+class BackgroundPermissionPage extends StatefulWidget {
+  const BackgroundPermissionPage({super.key});
+
+  @override
+  State<BackgroundPermissionPage> createState() => _BackgroundPermissionPageState();
+}
+
+class _BackgroundPermissionPageState extends State<BackgroundPermissionPage> {
+  bool _checking = false;
+
+  Future<void> _requestPermission() async {
+    setState(() => _checking = true);
+    
+    // Open app settings to allow user to enable background permission
+    await Geolocator.openAppSettings();
+    
+    setState(() => _checking = false);
+  }
+
+  Future<void> _checkPermission() async {
+    setState(() => _checking = true);
+    
+    final permission = await Geolocator.checkPermission();
+    final hasBackground = permission == LocationPermission.always;
+    
+    setState(() => _checking = false);
+    
+    if (hasBackground && mounted) {
+      Navigator.of(context).pop(true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF101010),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 40),
+              // Icon
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00D992).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Icon(
+                  Icons.location_on,
+                  size: 40,
+                  color: Color(0xFF00D992),
+                ),
+              ),
+              const SizedBox(height: 32),
+              // Title
+              const Text(
+                'Background Tracking Required',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Description
+              const Text(
+                'Your company requires location tracking during working hours.',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.white70,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Benefits
+              _buildBenefitItem(
+                Icons.verified_user,
+                'Verify attendance',
+                'Confirm you are at assigned locations',
+              ),
+              const SizedBox(height: 16),
+              _buildBenefitItem(
+                Icons.map,
+                'Monitor field activity',
+                'Managers can see real-time work progress',
+              ),
+              const SizedBox(height: 16),
+              _buildBenefitItem(
+                Icons.route,
+                'Record travel distance',
+                'Automatic mileage and route tracking',
+              ),
+              const Spacer(),
+              // Permission instruction
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Color(0xFF00D992), size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'How to enable:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _buildStep('1. Tap "Open Settings" below'),
+                    _buildStep('2. Select "Location"'),
+                    _buildStep('3. Choose "Allow all the time"'),
+                    _buildStep('4. Return to this app'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Buttons
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: _checking ? null : _requestPermission,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00D992),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _checking
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text(
+                          'Open Settings',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton(
+                  onPressed: _checking ? null : _checkPermission,
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.white24),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'I have enabled it - Continue',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text(
+                    'Cancel Check-In',
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBenefitItem(IconData icon, String title, String subtitle) {
+    return Row(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: const Color(0xFF00D992)),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.white54,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 14,
+          color: Colors.white70,
+        ),
+      ),
+    );
+  }
 }
