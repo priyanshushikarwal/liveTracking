@@ -95,7 +95,6 @@ class BackgroundTrackingService {
       return;
     }
 
-    WidgetsFlutterBinding.ensureInitialized();
     await _service.configure(
       androidConfiguration: AndroidConfiguration(
         onStart: _backgroundTrackingEntryPoint,
