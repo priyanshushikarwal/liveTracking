@@ -101,10 +101,8 @@ class BackgroundTrackingService {
         autoStart: true,
         autoStartOnBoot: true,
         isForegroundMode: true,
-        notificationChannelId: 'live_tracking_background',
         initialNotificationTitle: 'Live tracking ready',
-        initialNotificationContent:
-            'Background tracking will start when enabled.',
+        initialNotificationContent: 'Background tracking will start when enabled.',
         foregroundServiceNotificationId: 9042,
         foregroundServiceTypes: [AndroidForegroundType.location],
       ),

@@ -303,7 +303,7 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
             return Map<String, dynamic>.from(row as Map);
           })
           .toList(growable: false);
-        final employeeDirectory = employeeRows
+      final employeeDirectory = employeeRows
           .map((row) => Map<String, dynamic>.from(row as Map))
           .toList(growable: false);
       _profilesById = {
@@ -324,7 +324,9 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
             if (key != null && key.isNotEmpty) key: row,
       };
       debugPrint('[TrackingDebug] profiles loaded=${profiles.length}');
-      debugPrint('[TrackingDebug] employees loaded=${employeeDirectory.length}');
+      debugPrint(
+        '[TrackingDebug] employees loaded=${employeeDirectory.length}',
+      );
 
       final locationRows =
           await _supabase
@@ -877,7 +879,8 @@ class LiveTrackingViewModel extends StateNotifier<LiveTrackingState> {
   ) {
     final profile = _profilesById[employeeId] ?? const <String, dynamic>{};
     final profileEmployeeCode = profile['employee_id']?.toString();
-    final employee = _employeesByKey[profileEmployeeCode] ??
+    final employee =
+        _employeesByKey[profileEmployeeCode] ??
         _employeesByKey[employeeId] ??
         const <String, dynamic>{};
     final hasLocation = location.isNotEmpty;

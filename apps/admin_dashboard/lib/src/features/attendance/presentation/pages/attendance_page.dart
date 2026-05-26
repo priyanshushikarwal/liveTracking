@@ -64,10 +64,10 @@ class AttendanceRecord {
     );
     final checkInAt = _parseDate(json['check_in_at']) ?? DateTime.now();
     final employeeCode =
-      _cleanEmployeeCode(profile?['employee_id']) ??
-      _cleanEmployeeCode(metadata['employeeId']) ??
-      _cleanEmployeeCode(json['employee_code']) ??
-      '';
+        _cleanEmployeeCode(profile?['employee_id']) ??
+        _cleanEmployeeCode(metadata['employeeId']) ??
+        _cleanEmployeeCode(json['employee_code']) ??
+        '';
     final employeeName =
         profile?['full_name']?.toString() ??
         metadata['employeeName']?.toString() ??

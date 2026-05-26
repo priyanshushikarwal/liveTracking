@@ -542,8 +542,8 @@ class _EmployeeTrackingPanel extends StatelessWidget {
     final theme = Theme.of(context);
     final emp = employee;
     final employeeColor = emp == null
-      ? theme.colorScheme.primary
-      : notifier.employeeColor(emp);
+        ? theme.colorScheme.primary
+        : notifier.employeeColor(emp);
     final routeStart = state.playback.isEmpty
         ? '--'
         : _timeLabel(state.playback.first.recordedAt);
@@ -552,11 +552,11 @@ class _EmployeeTrackingPanel extends StatelessWidget {
         : _timeLabel(state.playback.last.recordedAt);
     final playbackCursor = state.playbackCursor;
     final playbackNow = playbackCursor == null
-      ? '--'
-      : _timeLabel(playbackCursor.recordedAt);
+        ? '--'
+        : _timeLabel(playbackCursor.recordedAt);
     final playbackProgress = state.playback.isEmpty
-      ? '--'
-      : '${state.playbackIndex + 1}/${state.playback.length}';
+        ? '--'
+        : '${state.playbackIndex + 1}/${state.playback.length}';
     return Container(
       decoration: _panelDecoration(context),
       child: emp == null
@@ -780,9 +780,8 @@ class _EmployeeTrackingPanel extends StatelessWidget {
                               (speed) => ChoiceChip(
                                 label: Text('${speed}x'),
                                 selected: state.playbackSpeed == speed,
-                                onSelected: (_) => notifier.setPlaybackSpeed(
-                                  speed,
-                                ),
+                                onSelected: (_) =>
+                                    notifier.setPlaybackSpeed(speed),
                               ),
                             )
                             .toList(growable: false),
@@ -919,9 +918,9 @@ class _LiveEmployeeList extends StatelessWidget {
                   DataCell(
                     CircleAvatar(
                       radius: 16,
-                      backgroundColor: employeeColor(employee).withValues(
-                        alpha: 0.2,
-                      ),
+                      backgroundColor: employeeColor(
+                        employee,
+                      ).withValues(alpha: 0.2),
                       child: Text(
                         employee.name.isNotEmpty
                             ? employee.name[0].toUpperCase()
@@ -1039,8 +1038,9 @@ class _EmployeeStatusBadge extends StatelessWidget {
         : status == 'IDLE'
         ? Icons.pause
         : Icons.circle;
-    final badgeColor =
-        status == 'OFFLINE' ? color.withValues(alpha: 0.45) : color;
+    final badgeColor = status == 'OFFLINE'
+        ? color.withValues(alpha: 0.45)
+        : color;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

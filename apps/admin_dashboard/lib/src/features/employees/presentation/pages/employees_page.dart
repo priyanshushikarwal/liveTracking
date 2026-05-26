@@ -58,9 +58,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
                 if (snapshot.hasError) {
                   return Center(
                     child: Text(
-                      snapshot.error
-                          .toString()
-                          .replaceFirst('Exception: ', ''),
+                      snapshot.error.toString().replaceFirst('Exception: ', ''),
                     ),
                   );
                 }
@@ -72,7 +70,8 @@ class _EmployeesPageState extends State<EmployeesPage> {
 
                 return ListView.separated(
                   itemCount: employees.length,
-                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final employee = employees[index];
                     final meta = Map<String, dynamic>.from(
@@ -82,11 +81,8 @@ class _EmployeesPageState extends State<EmployeesPage> {
                         employee['full_name']?.toString() ?? 'Employee';
                     final employeeCode =
                         employee['employee_id']?.toString().trim() ?? '';
-                    final department = meta['department']
-                                ?.toString()
-                                .trim()
-                                .isNotEmpty ==
-                            true
+                    final department =
+                        meta['department']?.toString().trim().isNotEmpty == true
                         ? meta['department'].toString()
                         : employee['department_id']?.toString() ?? 'Operations';
                     final status = employee['status']?.toString() ?? 'ACTIVE';
@@ -170,7 +166,9 @@ class _EmployeesPageState extends State<EmployeesPage> {
           final tempPassword = result?['tempPassword']?.toString() ?? '';
 
           return AlertDialog(
-            title: Text(result == null ? 'CREATE EMPLOYEE' : 'EMPLOYEE CREATED'),
+            title: Text(
+              result == null ? 'CREATE EMPLOYEE' : 'EMPLOYEE CREATED',
+            ),
             content: SizedBox(
               width: 520,
               child: result == null
@@ -179,26 +177,24 @@ class _EmployeesPageState extends State<EmployeesPage> {
                       children: [
                         TextField(
                           controller: nameController,
-                          decoration:
-                              const InputDecoration(labelText: 'Name'),
+                          decoration: const InputDecoration(labelText: 'Name'),
                         ),
                         const SizedBox(height: 10),
                         TextField(
                           controller: emailController,
-                          decoration:
-                              const InputDecoration(labelText: 'Email'),
+                          decoration: const InputDecoration(labelText: 'Email'),
                         ),
                         const SizedBox(height: 10),
                         TextField(
                           controller: phoneController,
-                          decoration:
-                              const InputDecoration(labelText: 'Phone'),
+                          decoration: const InputDecoration(labelText: 'Phone'),
                         ),
                         const SizedBox(height: 10),
                         TextField(
                           controller: departmentController,
-                          decoration:
-                              const InputDecoration(labelText: 'Department'),
+                          decoration: const InputDecoration(
+                            labelText: 'Department',
+                          ),
                         ),
                         const SizedBox(height: 10),
                         TextField(
@@ -208,8 +204,9 @@ class _EmployeesPageState extends State<EmployeesPage> {
                         const SizedBox(height: 10),
                         TextField(
                           controller: branchController,
-                          decoration:
-                              const InputDecoration(labelText: 'Branch'),
+                          decoration: const InputDecoration(
+                            labelText: 'Branch',
+                          ),
                         ),
                         const SizedBox(height: 10),
                         TextField(
@@ -234,7 +231,8 @@ class _EmployeesPageState extends State<EmployeesPage> {
                         _CredentialLine(
                           label: 'Employee ID',
                           value:
-                              createdProfile?['employee_id']?.toString() ?? '--',
+                              createdProfile?['employee_id']?.toString() ??
+                              '--',
                         ),
                         _CredentialLine(
                           label: 'Email',
