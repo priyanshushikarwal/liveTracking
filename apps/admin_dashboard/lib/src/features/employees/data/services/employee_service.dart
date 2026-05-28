@@ -9,16 +9,21 @@ class EmployeeService {
 
   Future<List<Map<String, dynamic>>> listEmployees() async {
     final SupabaseClient supabase = sb.supabase;
-    final rows =
-        await supabase
-                .from('profiles')
-                .select(
-                  'id, full_name, employee_id, department_id, role, status, meta',
-                )
-                .ilike('role', 'employee')
-                .order('full_name')
-            as List<dynamic>? ??
-        const [];
+    List<dynamic> rows;
+    try {
+      rows = await supabase.rpc<List<dynamic>>('admin_list_employee_profiles');
+    } catch (_) {
+      rows =
+          await supabase
+                  .from('profiles')
+                  .select(
+                    'id, full_name, employee_id, department_id, role, status, meta',
+                  )
+                  .ilike('role', 'employee')
+                  .order('full_name')
+              as List<dynamic>? ??
+          const [];
+    }
 
     return rows
         .map((row) => Map<String, dynamic>.from(row as Map))
@@ -28,6 +33,7 @@ class EmployeeService {
   Future<Map<String, dynamic>> createEmployee({
     required String fullName,
     required String email,
+    required String password,
     String? phone,
     String? department,
     String? team,
@@ -42,6 +48,7 @@ class EmployeeService {
     final payload = {
       'full_name': fullName,
       'email': email,
+      'password': password,
       'phone': phone,
       'role': role,
       'branch_id': branchId,
@@ -55,9 +62,18 @@ class EmployeeService {
 
     final resp = await supabase.functions.invoke(
       'create_employee',
-      body: jsonEncode(payload),
+      body: payload,
     );
-    final Map<String, dynamic> data = resp.data as Map<String, dynamic>;
+    final Map<String, dynamic> data = resp.data is Map<String, dynamic>
+        ? resp.data as Map<String, dynamic>
+        : jsonDecode(resp.data.toString()) as Map<String, dynamic>;
+    if (data['success'] != true) {
+      final detail = data['detail']?.toString();
+      final message = data['error']?.toString() ?? 'Failed to create employee';
+      throw Exception(
+        detail == null || detail.isEmpty ? message : '$message: $detail',
+      );
+    }
     return data;
   }
 }

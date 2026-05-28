@@ -119,6 +119,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
   Future<void> _showCreateEmployeeDialog() async {
     final nameController = TextEditingController();
     final emailController = TextEditingController();
+    final passwordController = TextEditingController(text: _generatePassword());
     final phoneController = TextEditingController();
     final departmentController = TextEditingController();
     final teamController = TextEditingController();
@@ -136,8 +137,13 @@ class _EmployeesPageState extends State<EmployeesPage> {
           Future<void> submit() async {
             if (loading) return;
             if (nameController.text.trim().isEmpty ||
-                emailController.text.trim().isEmpty) {
-              setState(() => error = 'Name and email are required');
+                emailController.text.trim().isEmpty ||
+                passwordController.text.isEmpty) {
+              setState(() => error = 'Name, email and password are required');
+              return;
+            }
+            if (passwordController.text.length < 6) {
+              setState(() => error = 'Password must be at least 6 characters');
               return;
             }
             setState(() {
@@ -148,6 +154,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
               result = await EmployeeService().createEmployee(
                 fullName: nameController.text.trim(),
                 email: emailController.text.trim(),
+                password: passwordController.text,
                 phone: phoneController.text.trim(),
                 department: departmentController.text.trim(),
                 team: teamController.text.trim(),
@@ -163,7 +170,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
 
           final createdProfile = result?['profile'] as Map<String, dynamic>?;
           final createdUser = result?['user'] as Map<String, dynamic>?;
-          final tempPassword = result?['tempPassword']?.toString() ?? '';
+          final password = result?['password']?.toString() ?? '';
 
           return AlertDialog(
             title: Text(
@@ -182,7 +189,24 @@ class _EmployeesPageState extends State<EmployeesPage> {
                         const SizedBox(height: 10),
                         TextField(
                           controller: emailController,
+                          keyboardType: TextInputType.emailAddress,
                           decoration: const InputDecoration(labelText: 'Email'),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: passwordController,
+                          decoration: InputDecoration(
+                            labelText: 'Password for employee app',
+                            suffixIcon: IconButton(
+                              tooltip: 'Generate password',
+                              icon: const Icon(Icons.refresh),
+                              onPressed: () {
+                                setState(() {
+                                  passwordController.text = _generatePassword();
+                                });
+                              },
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 10),
                         TextField(
@@ -239,8 +263,8 @@ class _EmployeesPageState extends State<EmployeesPage> {
                           value: createdUser?['email']?.toString() ?? '--',
                         ),
                         _CredentialLine(
-                          label: 'Temporary Password',
-                          value: tempPassword.isEmpty ? '--' : tempPassword,
+                          label: 'Password',
+                          value: password.isEmpty ? '--' : password,
                         ),
                         const SizedBox(height: 12),
                         Text(
@@ -272,6 +296,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
 
     nameController.dispose();
     emailController.dispose();
+    passwordController.dispose();
     phoneController.dispose();
     departmentController.dispose();
     teamController.dispose();
@@ -281,6 +306,14 @@ class _EmployeesPageState extends State<EmployeesPage> {
     if (result != null && mounted) {
       _refresh();
     }
+  }
+
+  String _generatePassword() {
+    final suffix = DateTime.now().millisecondsSinceEpoch
+        .remainder(9000)
+        .toString()
+        .padLeft(4, '0');
+    return 'Emp@$suffix';
   }
 }
 

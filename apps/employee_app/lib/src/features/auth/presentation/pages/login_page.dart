@@ -14,13 +14,11 @@ class LoginPage extends ConsumerStatefulWidget {
 class _LoginPageState extends ConsumerState<LoginPage> {
   final employeeIdController = TextEditingController(text: 'EMP-2048');
   final passwordController = TextEditingController(text: 'password@123');
-  final phoneController = TextEditingController(text: '+919876543210');
 
   @override
   void dispose() {
     employeeIdController.dispose();
     passwordController.dispose();
-    phoneController.dispose();
     super.dispose();
   }
 
@@ -80,35 +78,30 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           style: theme.textTheme.headlineLarge,
                         ),
                         const SizedBox(height: 16),
-                        SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(
-                              value: 'employee',
-                              icon: Icon(Icons.badge_outlined),
-                              label: Text('Employee ID'),
-                            ),
-                            ButtonSegment(
-                              value: 'otp',
-                              icon: Icon(Icons.sms_outlined),
-                              label: Text('OTP'),
-                            ),
-                          ],
-                          selected: const {'employee'},
-                          onSelectionChanged: (_) {},
-                        ),
-                        const SizedBox(height: 16),
                         TextField(
                           controller: employeeIdController,
+                          textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
                             labelText: 'Employee ID',
+                            prefixIcon: Icon(Icons.badge_outlined),
                           ),
                         ),
                         const SizedBox(height: 12),
                         TextField(
                           controller: passwordController,
                           obscureText: true,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) {
+                            if (!state.loading) {
+                              notifier.loginWithEmployeeId(
+                                employeeIdController.text.trim(),
+                                passwordController.text,
+                              );
+                            }
+                          },
                           decoration: const InputDecoration(
                             labelText: 'Password',
+                            prefixIcon: Icon(Icons.lock_outline),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -124,41 +117,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             child: Text(
                               state.loading ? 'AUTHENTICATING...' : 'LOGIN',
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        const Divider(),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: phoneController,
-                          decoration: const InputDecoration(
-                            labelText: 'Phone Number',
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: state.loading
-                                ? null
-                                : () async {
-                                    await notifier.requestOtp(
-                                      phoneController.text.trim(),
-                                    );
-                                    if (context.mounted) {
-                                      context.push('/otp');
-                                    }
-                                  },
-                            child: const Text('REQUEST OTP'),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Center(
-                          child: TextButton(
-                            onPressed: () {
-                              if (context.mounted) context.push('/signup');
-                            },
-                            child: const Text('Sign up for an account'),
                           ),
                         ),
                         if (state.error != null) ...[

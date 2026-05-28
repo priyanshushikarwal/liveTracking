@@ -6,8 +6,6 @@ import '../../features/attendance/data/repositories/attendance_repository_impl.d
 import '../../features/attendance/domain/repositories/attendance_repository.dart';
 import '../../features/attendance/presentation/pages/attendance_page_enhanced.dart';
 import '../../features/auth/presentation/pages/login_page.dart';
-import '../../features/auth/presentation/pages/otp_verification_page.dart';
-import '../../features/auth/presentation/pages/signup_page.dart';
 import '../../features/attendance/presentation/viewmodels/attendance_view_model.dart';
 import '../../features/auth/presentation/viewmodels/auth_view_model.dart';
 import '../../features/camera/presentation/pages/camera_page.dart';
@@ -81,11 +79,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/login',
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
-      GoRoute(
-        path: '/otp',
-        builder: (context, state) => const OtpVerificationPage(),
-      ),
-      GoRoute(path: '/signup', builder: (context, state) => const SignUpPage()),
       GoRoute(path: '/', builder: (context, state) => const DashboardPage()),
       GoRoute(
         path: '/attendance',
